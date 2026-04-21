@@ -102,10 +102,12 @@ class ClaudeHeadlessAgent(HalfDuplexAgent[ClaudeHeadlessAgentState]):
         domain_policy: str,
         claude_bin: str = "claude",
         timeout: int = 120,
+        model: Optional[str] = None,
     ) -> None:
         super().__init__(tools=tools, domain_policy=domain_policy)
         self.claude_bin = claude_bin
         self.timeout = timeout
+        self.model = model
 
     # -- state init ---------------------------------------------------------
 
@@ -282,6 +284,8 @@ class ClaudeHeadlessAgent(HalfDuplexAgent[ClaudeHeadlessAgentState]):
             "--permission-mode",
             "bypassPermissions",
         ]
+        if self.model:
+            cmd.extend(["--model", self.model])
 
         t0 = time.monotonic()
         try:
@@ -429,14 +433,18 @@ def create_claude_headless_agent(tools, domain_policy, **kwargs) -> ClaudeHeadle
     """tau2 registry factory for :class:`ClaudeHeadlessAgent`.
 
     Recognised kwargs:
+        llm (str): Claude CLI model slug (e.g. "claude-opus-4-7[1m]").
+            Passed as --model to the claude CLI. None = use CLI default.
         llm_args (dict): may contain ``claude_bin`` (str) and ``timeout`` (int).
     All other kwargs are ignored for API compatibility with tau2's factory
-    protocol (``llm``, ``task``, etc.).
+    protocol (``task``, etc.).
     """
     llm_args = kwargs.get("llm_args") or {}
+    model = kwargs.get("llm") or llm_args.get("model")
     return ClaudeHeadlessAgent(
         tools=tools,
         domain_policy=domain_policy,
         claude_bin=llm_args.get("claude_bin", "claude"),
-        timeout=int(llm_args.get("timeout", 120)),
+        timeout=int(llm_args.get("timeout", 300)),
+        model=model if model else None,
     )

@@ -21,13 +21,20 @@ from tau2_integration.claude_headless_agent import (
     ClaudeHeadlessAgentState,
     create_claude_headless_agent,
 )
-from tau2_integration.register import register
 from tau2_integration.rlm_agent import (
     RLMAgent,
     RLMAgentState,
     create_rlm_agent,
 )
 
+# NOTE: we deliberately do NOT re-export ``register`` at the package level.
+# If we did, ``from tau2_integration import register`` would give back the
+# function and shadow the ``tau2_integration.register`` submodule — breaking
+# ``register.CLAUDE_HEADLESS_AGENT_NAME`` style access for callers that want
+# the constants. Import the function explicitly:
+#
+#     from tau2_integration.register import register
+#
 __all__ = [
     "ClaudeHeadlessAgent",
     "ClaudeHeadlessAgentState",
@@ -35,5 +42,4 @@ __all__ = [
     "RLMAgentState",
     "create_claude_headless_agent",
     "create_rlm_agent",
-    "register",
 ]

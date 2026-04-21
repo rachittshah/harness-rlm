@@ -73,6 +73,25 @@ def _build_fake_anthropic_response(text: str, input_tokens: int, output_tokens: 
     return msg
 
 
+def _redirect_log(monkeypatch: pytest.MonkeyPatch, log_path: Path) -> None:
+    """Redirect sub-call log writes into `log_path`.
+
+    We can't just monkeypatch `mcp_server.SUB_CALLS_LOG` because
+    `_append_sub_call_log(path: Path = SUB_CALLS_LOG)` captures the
+    original value as a default-argument binding. Patch the function itself.
+    """
+    from harness_rlm import mcp_server
+
+    monkeypatch.setattr(mcp_server, "SUB_CALLS_LOG", log_path)
+
+    original = mcp_server._append_sub_call_log
+
+    def redirected(log_entry, path=log_path):
+        return original(log_entry, path=path)
+
+    monkeypatch.setattr(mcp_server, "_append_sub_call_log", redirected)
+
+
 def test_sub_call_log_written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Calling run_llm_query appends a JSON line to SUB_CALLS_LOG."""
     from harness_rlm import mcp_server
@@ -80,7 +99,7 @@ def test_sub_call_log_written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     # Redirect the log target into tmp_path so we don't pollute /tmp/rlm.
     log_path = tmp_path / "sub_calls.jsonl"
-    monkeypatch.setattr(mcp_server, "SUB_CALLS_LOG", log_path)
+    _redirect_log(monkeypatch, log_path)
 
     # Build a fake anthropic.Anthropic client whose messages.create returns canned data.
     fake_client = MagicMock()
@@ -123,22 +142,18 @@ def test_sub_call_log_written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert "timestamp" in entry
 
 
-def test_sub_call_log_forwards_system_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_sub_call_log_forwards_system_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """If system is set on the request, it's forwarded to messages.create."""
     from harness_rlm import mcp_server
     from harness_rlm.models import LLMQueryRequest
 
-    monkeypatch.setattr(mcp_server, "SUB_CALLS_LOG", tmp_path / "sub_calls.jsonl")
+    _redirect_log(monkeypatch, tmp_path / "sub_calls.jsonl")
 
     fake_client = MagicMock()
     fake_client.messages.create.return_value = _build_fake_anthropic_response(
         text="ok", input_tokens=5, output_tokens=2
     )
-    monkeypatch.setattr(
-        mcp_server.anthropic, "Anthropic", MagicMock(return_value=fake_client)
-    )
+    monkeypatch.setattr(mcp_server.anthropic, "Anthropic", MagicMock(return_value=fake_client))
 
     req = LLMQueryRequest(prompt="x", system="be terse")
     mcp_server.run_llm_query(req, api_key="fake-key")
@@ -147,23 +162,19 @@ def test_sub_call_log_forwards_system_prompt(
     assert create_kwargs["system"] == "be terse"
 
 
-def test_sub_call_log_multiple_appends(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_sub_call_log_multiple_appends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Multiple calls append multiple lines (not overwrite)."""
     from harness_rlm import mcp_server
     from harness_rlm.models import LLMQueryRequest
 
     log_path = tmp_path / "sub_calls.jsonl"
-    monkeypatch.setattr(mcp_server, "SUB_CALLS_LOG", log_path)
+    _redirect_log(monkeypatch, log_path)
 
     fake_client = MagicMock()
     fake_client.messages.create.return_value = _build_fake_anthropic_response(
         text="x", input_tokens=1, output_tokens=1
     )
-    monkeypatch.setattr(
-        mcp_server.anthropic, "Anthropic", MagicMock(return_value=fake_client)
-    )
+    monkeypatch.setattr(mcp_server.anthropic, "Anthropic", MagicMock(return_value=fake_client))
 
     for i in range(3):
         mcp_server.run_llm_query(LLMQueryRequest(prompt=f"p{i}"), api_key="k")
@@ -174,23 +185,19 @@ def test_sub_call_log_multiple_appends(
     assert previews == ["p0", "p1", "p2"]
 
 
-def test_prompt_preview_truncated_to_200_chars(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_prompt_preview_truncated_to_200_chars(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """prompt_preview stores only first 200 chars of the prompt."""
     from harness_rlm import mcp_server
     from harness_rlm.models import LLMQueryRequest
 
     log_path = tmp_path / "sub_calls.jsonl"
-    monkeypatch.setattr(mcp_server, "SUB_CALLS_LOG", log_path)
+    _redirect_log(monkeypatch, log_path)
 
     fake_client = MagicMock()
     fake_client.messages.create.return_value = _build_fake_anthropic_response(
         text="r", input_tokens=1, output_tokens=1
     )
-    monkeypatch.setattr(
-        mcp_server.anthropic, "Anthropic", MagicMock(return_value=fake_client)
-    )
+    monkeypatch.setattr(mcp_server.anthropic, "Anthropic", MagicMock(return_value=fake_client))
 
     long_prompt = "a" * 500
     mcp_server.run_llm_query(LLMQueryRequest(prompt=long_prompt), api_key="k")

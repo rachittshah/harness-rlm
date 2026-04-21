@@ -68,8 +68,7 @@ def test_budget_guard_blocks_when_over_limit(tmp_path: Path):
     result = _run_hook(hook, {"tool_name": "Bash", "tool_input": {"command": "echo hi"}})
 
     assert result.returncode == 2, (
-        f"expected exit 2 (blocking), got {result.returncode}. "
-        f"stderr={result.stderr!r}"
+        f"expected exit 2 (blocking), got {result.returncode}. stderr={result.stderr!r}"
     )
     assert b"budget exceeded" in result.stderr.lower() or b"RLM budget" in result.stderr
 
@@ -117,9 +116,7 @@ def test_budget_guard_ignores_non_guarded_tools(tmp_path: Path):
     state_path.write_text(json.dumps({"llm_calls": 10}))
 
     hook = _patched_hook(BUDGET_GUARD_SRC, rlm_dir, tmp_path)
-    result = _run_hook(
-        hook, {"tool_name": "Read", "tool_input": {"file_path": "/tmp/x"}}
-    )
+    result = _run_hook(hook, {"tool_name": "Read", "tool_input": {"file_path": "/tmp/x"}})
 
     assert result.returncode == 0
     # Counter unchanged — Read is not guarded.

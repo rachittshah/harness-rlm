@@ -52,6 +52,28 @@ uv sync --extra tau2
 bash examples/run_tau2.sh
 ```
 
+## Initial τ²-Bench submission (2026-04-21)
+
+End-to-end verification: `claude -p` (Claude Code headless) → `ClaudeHeadlessAgent` → tau2 orchestrator → airline domain, user simulator on GPT-4.1.
+
+| Task | Reward | Messages | Notes |
+|---|---|---|---|
+| 0 | 1.0 ✓ | 12 | Agent correctly refused cancel+refund (basic economy, >24h, no insurance) |
+| 1 | 0.0 ✗ | 21 | Hit `max_steps=20` ceiling — conversation not resolved, not incorrect action |
+| 2 | 1.0 ✓ | 20 | Policy-correct |
+
+**Mean reward**: 0.667 (2/3) · **Wall-clock**: 285s · **Model**: `claude-opus-4-7[1m]` (Opus 4.7 with 1M context window) · **Seed**: 42 · **Max steps per task**: 20
+
+Results file: `results/tau2_airline_3tasks.json`. Full trajectories in `/tmp/rlm/tau2_invocations.jsonl`.
+
+**Reproduce**: 
+```bash
+export ANTHROPIC_API_KEY=sk-ant-... ; export OPENAI_API_KEY=sk-...
+uv pip install -e /path/to/tau2-bench
+uv run python examples/run_tau2_py.py --num-tasks 3 --agent-llm 'claude-opus-4-7[1m]' \
+  --out results/tau2_airline_3tasks.json
+```
+
 ## References
 
 - RLM paper: [arXiv:2512.24601](https://arxiv.org/abs/2512.24601)
