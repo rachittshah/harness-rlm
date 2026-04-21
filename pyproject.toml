@@ -13,12 +13,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-tau2 = [
-    "tau2-bench",
-]
+# tau2-bench is not on PyPI. To use the tau2 integration, install it manually:
+#   uv pip install --editable /path/to/tau2-bench
+# The tau2_integration/ module imports tau2 lazily so this package works without it.
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "pytest-mock>=3.14",
     "ruff>=0.6",
 ]
 
