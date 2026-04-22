@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RLMFinalAnswer",
+  "type": "object",
+  "required": ["final"],
+  "additionalProperties": false,
+  "properties": {
+    "final": {
+      "type": "string",
+      "description": "The answer to the user's question, synthesized from sub-LLM calls."
+    },
+    "iterations": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of Python/shell cells executed."
+    },
+    "llm_calls": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of sub-LLM calls dispatched."
+    },
+    "trajectory_path": {
+      "type": "string",
+      "description": "Absolute path to the JSONL trajectory file."
+    }
+  }
+}

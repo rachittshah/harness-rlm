@@ -1,0 +1,71 @@
+# agents/openai.yaml — optional Codex-specific metadata for the rlm skill.
+#
+# Per developers.openai.com/codex/skills (2026-04-21), this file is OPTIONAL.
+# It configures UI metadata, invocation policy, and tool dependencies specific
+# to Codex. The Open Agent Skills Standard frontmatter in SKILL.md is the
+# source of truth; this file only adds Codex-specific hints.
+#
+# Ref: https://developers.openai.com/codex/skills
+# Ref: https://agentskills.io/specification
+
+display_name: "RLM — Recursive Language Model"
+summary: >
+  Decompose a long context (>100K tokens) into chunks, dispatch cheap sub-LLM
+  calls (Haiku via the `rlm` MCP server) against each chunk in parallel, and
+  synthesize a final answer. Implements arXiv:2512.24601.
+
+# UI / discovery hints
+category: analysis
+tags:
+  - long-context
+  - recursive
+  - mcp
+  - rlm
+
+# Dependencies Codex should surface in the skill activation UI.
+# These are INFORMATIONAL — Codex does not enforce them at activation.
+dependencies:
+  tools:
+    # Shell access for pickle-backed context I/O.
+    - shell
+  mcp_servers:
+    # The `rlm` MCP server exposing `llm_query`. See mcp-config.md in the
+    # adapter root for the exact config.toml block.
+    - name: rlm
+      required: true
+      tool: llm_query
+      description: >
+        Exposes `llm_query(prompt, model, max_tokens, system)` over stdio.
+        Without this registered, the skill falls back to shell-out-to-self
+        via `codex exec -p` which is expensive. See references/loop.md §3.2.
+  scripts:
+    - path: scripts/rlm_orchestrator.py
+      purpose: budget-enforcement + trajectory logging
+      interpreter: "uv run python"
+  references:
+    - references/loop.md
+    - references/final_schema.json
+
+# Recommended invocation policy
+invocation:
+  # Trigger explicitly — this skill is not cheap to run, so don't auto-activate.
+  auto_activate: false
+  # Tokens the skill body adds on activation (measured via wc-approximation).
+  estimated_body_tokens: 2200
+
+# Model hints — Codex root LM suggestions. Final choice is the user's.
+model_hints:
+  root:
+    preferred: ["gpt-5", "gpt-5-codex"]
+    rationale: "Root LM needs strong planning + tool use; cost amortized across sub-calls."
+  sub:
+    preferred: ["claude-haiku-4-5-20251001"]
+    rationale: "Sub-LM is text-in/text-out only; Haiku's 1M context + low $/Mtok is optimal."
+
+# Output contract for headless runs
+output:
+  schema: references/final_schema.json
+  recommendation: >
+    Invoke with `codex exec --output-schema <path-to-final_schema.json>` to
+    enforce structured FINAL output. This is the tightest RLM termination
+    signal in the cohort.

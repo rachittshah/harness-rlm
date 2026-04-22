@@ -1,0 +1,188 @@
+version: "1.0.0"
+title: "Recursive Language Model (RLM) — root orchestrator"
+description: >-
+  Implements the RLM pattern from arXiv:2512.24601 on top of Goose. The root
+  Goose agent (configured by the user, typically Sonnet or Opus) plans the
+  decomposition of a long context, dispatches per-chunk sub-LLM queries through
+  the `rlm-mcp-server` MCP extension (which proxies directly to Haiku-class
+  Anthropic models, bypassing Goose's per-spawn overhead), optionally delegates
+  structured per-chunk work to the `rlm-subquery` sub-recipe, and halts when a
+  FINAL(answer) sentinel is written to /tmp/rlm/FINAL.txt or the turn budget
+  is exhausted.
+
+parameters:
+  - key: user_query
+    input_type: string
+    requirement: required
+    description: >-
+      The user's high-level question. The root LM is responsible for
+      decomposing the loaded context to answer this.
+
+  - key: context_path
+    input_type: file
+    requirement: optional
+    default: ""
+    description: >-
+      Absolute path to a long document to load into the root LM's context.
+      Leave empty if the user embeds context inline (via /file or /url
+      directives) in the text passed with `goose run -t ...`.
+
+  - key: sub_model
+    input_type: string
+    requirement: optional
+    default: "claude-haiku-4-5-20251001"
+    description: >-
+      Anthropic model ID passed to every `llm_query` call. Haiku is the default
+      per R3 token economics — cheap sub-calls, root stays on the strong model.
+
+  - key: max_turns
+    input_type: number
+    requirement: optional
+    default: "40"
+    description: >-
+      Hard cap on root-LM turns. Also mirrored into `settings.max_turns` below.
+      Exceeding this halts the loop regardless of FINAL.
+
+  - key: max_sub_calls
+    input_type: number
+    requirement: optional
+    default: "50"
+    description: >-
+      Soft budget on `llm_query` dispatches. The root LM is instructed to stop
+      when /tmp/rlm/sub_calls.jsonl line count approaches this number.
+
+  - key: final_path
+    input_type: string
+    requirement: optional
+    default: "/tmp/rlm/FINAL.txt"
+    description: >-
+      Absolute path where the root LM must write its final answer. Existence of
+      this file with non-empty content is the RLM halt signal.
+
+extensions:
+  - type: stdio
+    name: rlm-mcp-server
+    cmd: uv
+    args:
+      - run
+      - --with
+      - anthropic
+      - --with
+      - mcp
+      - python
+      - "-m"
+      - harness_rlm.mcp_server
+    env_keys:
+      - ANTHROPIC_API_KEY
+    timeout: 300
+    bundled: false
+    description: >-
+      MCP server exposing a single `llm_query(prompt, model, max_tokens, system)`
+      tool that calls the Anthropic API directly. This is the RLM sub-LLM
+      dispatch primitive — cheaper than spawning a full Goose subagent for
+      text-only queries. Source: ../../src/harness_rlm/mcp_server.py.
+
+  - type: builtin
+    name: developer
+    bundled: true
+    enabled: true
+    timeout: 300
+    description: >-
+      Bundled developer extension — used only for reading `context_path`
+      (when provided) and writing the final answer to `final_path`.
+
+sub_recipes:
+  - name: rlm_subquery
+    path: "{{ recipe_dir }}/rlm-subquery.yaml"
+    description: >-
+      Per-chunk sub-LLM dispatch. Optional. The root LM should prefer calling
+      the `llm_query` MCP tool directly for plain sub-queries; the sub-recipe
+      is reserved for cases where a chunk needs its own multi-step tool flow
+      (e.g. fetch a URL, then summarise, then extract).
+    values:
+      sub_model: "{{ sub_model }}"
+
+settings:
+  goose_provider: "anthropic"
+  # goose_model is intentionally unset — the user's default root model wins.
+  temperature: 0.2
+  max_turns: 40
+
+retry:
+  max_retries: 1
+  timeout_seconds: 1200
+  checks:
+    - type: shell
+      command: "test -s {{ final_path }}"
+  on_failure: "echo 'RLM: FINAL sentinel not written — budget likely exhausted.'"
+
+response:
+  json_schema:
+    type: object
+    properties:
+      final_answer:
+        type: string
+        description: "Contents of FINAL.txt (the RLM halt output)."
+      sub_call_count:
+        type: integer
+        description: "Number of llm_query dispatches used."
+      halted_by:
+        type: string
+        enum: ["final_sentinel", "turn_budget", "sub_call_budget", "error"]
+    required:
+      - final_answer
+      - halted_by
+
+instructions: |
+  You are the **root LM** of a Recursive Language Model (RLM) loop.
+
+  # Halt contract (read this first)
+  - The loop ENDS the moment you write the final answer to `{{ final_path }}`
+    via the `developer` extension's file-write tool. That file's presence with
+    non-empty content is the success signal. Do this exactly once.
+  - If `/tmp/rlm/sub_calls.jsonl` has ~`{{ max_sub_calls }}` lines, stop
+    dispatching new sub-queries and synthesise from what you have.
+  - If you hit turn `{{ max_turns }}`, write the best partial answer you have.
+
+  # Primitives you have
+  1. `mcp__rlm-mcp-server__llm_query(prompt, model, max_tokens?, system?)`
+     — your **preferred** sub-LLM dispatch. Returns a plain text response.
+     Cheap: goes straight to the Anthropic API. Use it for every chunk-level
+     extract / summarise / answer. Default `model` to `{{ sub_model }}`.
+  2. Developer extension — read files, write `{{ final_path }}`.
+  3. Sub-recipe `rlm_subquery` — only invoke when a chunk needs a
+     multi-step tool flow. Otherwise prefer `llm_query`.
+
+  # Loop structure
+  **Step 1 — Load context.**
+  If `{{ context_path }}` is a non-empty path, read it with the developer
+  extension. Otherwise, treat the user's text passed via `-t` as the context.
+
+  **Step 2 — Plan decomposition.**
+  Write a plan listing the chunks / questions / extraction targets you need.
+  Keep it tight — every plan item costs at least one sub-call.
+
+  **Step 3 — Dispatch.**
+  For each plan item, call `llm_query` with a *focused* prompt that contains
+  ONLY the relevant chunk and the specific question. Do not pass the whole
+  document. This is the whole point: the root LM aggregates, sub-LMs stay
+  narrow.
+
+  **Step 4 — Synthesise.**
+  Combine sub-answers into a final response to: `{{ user_query }}`.
+
+  **Step 5 — Halt.**
+  Write the final answer to `{{ final_path }}`. Do not keep talking after
+  that write succeeds.
+
+  # Budget discipline
+  - After every 10 sub-calls, pause and ask yourself: "Have I collected enough
+    signal to answer? If yes, synthesise and halt." Over-dispatching is the
+    main failure mode of this loop.
+  - Never pass the full document to `llm_query`. If a chunk is >8K tokens,
+    summarise it first, then use the summary downstream.
+
+prompt: |
+  User query: {{ user_query }}
+
+  Begin the RLM loop now. Start at Step 1.

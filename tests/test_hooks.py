@@ -1,4 +1,4 @@
-"""Tests for the Claude Code hooks (claude_skill/hooks/*.py).
+"""Tests for the Claude Code hooks (adapters/claude_code/hooks/*.py).
 
 Hooks hard-code /tmp/rlm paths. To isolate each test, we copy the hook source
 into tmp_path and text-substitute the hard-coded paths to point at tmp_path,
@@ -16,7 +16,9 @@ from pathlib import Path
 
 import pytest
 
-HOOKS_DIR = Path(__file__).resolve().parent.parent / "claude_skill" / "hooks"
+HOOKS_DIR = (
+    Path(__file__).resolve().parent.parent / "adapters" / "claude_code" / "hooks"
+)
 BUDGET_GUARD_SRC = HOOKS_DIR / "budget_guard.py"
 TRAJECTORY_LOG_SRC = HOOKS_DIR / "trajectory_log.py"
 

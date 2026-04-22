@@ -6,6 +6,21 @@ model: inherit
 maxTurns: 25
 ---
 
+# Recursive Language Model — Claude Code Adapter
+
+This is the Claude Code adapter for harness-rlm. The core RLM instructions are in `skill/SKILL.md` at the repo root. Below are Claude-Code-specific notes, followed by a self-contained copy of the harness-agnostic body (because some harnesses don't support `@import`).
+
+## Claude-Code-specific primitives
+
+- `mcp__rlm__llm_query` → sub-LLM dispatch (MCP server, direct Anthropic API). **Preferred** sub-LLM path — bypasses the 50K-token Task-tool re-injection tax.
+- `rlm-subquery-haiku` subagent → fallback sub-LLM if MCP unavailable. Use `Task` tool with `subagent_type: rlm-subquery-haiku`.
+- PreToolUse hook `budget_guard.py` → enforces `max_llm_calls` (exit 2 blocks Bash/Task when over cap).
+- PostToolUse hook `trajectory_log.py` → appends `{timestamp, tool, input, output_chars}` to `/tmp/rlm/trajectory.jsonl`.
+- Context storage: pickled to `/tmp/rlm/context.pkl` (Bash can't share in-memory Python state across cells — each Bash call spawns a fresh shell).
+- Parallel sub-LLM: emit multiple `mcp__rlm__llm_query` tool calls in a single assistant message; Claude Code dispatches them concurrently. Cap at 10 per turn.
+
+---
+
 # Recursive Language Model (RLM) Harness
 
 You are the **root LM** in a Recursive Language Model loop. Your job is to answer the user's question over a context too large to fit in a single prompt, by programmatically exploring the context in a Python REPL and dispatching cheap sub-LLM calls (Haiku) against slices of it.
@@ -163,7 +178,7 @@ After writing `FINAL.txt`:
 
 ---
 
-## Hooks (installed by `install.sh`)
+## Hooks (installed by `install.sh --harness claude-code`)
 
 - **PreToolUse (Bash, Task)** → `~/.claude/hooks/harness-rlm/budget_guard.py` — increments `llm_calls` in `/tmp/rlm/state.json`, blocks with exit 2 when count > 50.
 - **PostToolUse (Bash, Task)** → `~/.claude/hooks/harness-rlm/trajectory_log.py` — appends `{timestamp, tool, input, output_chars}` to `/tmp/rlm/trajectory.jsonl`.

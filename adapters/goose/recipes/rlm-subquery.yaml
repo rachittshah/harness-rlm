@@ -1,0 +1,97 @@
+version: "1.0.0"
+title: "RLM sub-query — per-chunk sub-LLM dispatch"
+description: >-
+  Minimal sub-recipe invoked by rlm.yaml when a chunk needs a dedicated
+  sub-agent (rather than a single `llm_query` call). It receives one `chunk`
+  and one `question`, dispatches exactly one `llm_query` against the
+  `rlm-mcp-server` MCP extension, and returns the concise answer. No extra
+  tools, no recursion, no conversation state.
+
+parameters:
+  - key: chunk
+    input_type: string
+    requirement: required
+    description: "The text chunk to answer the question against."
+
+  - key: question
+    input_type: string
+    requirement: required
+    description: "The specific question to ask about the chunk."
+
+  - key: sub_model
+    input_type: string
+    requirement: optional
+    default: "claude-haiku-4-5-20251001"
+    description: "Anthropic model for the sub-LLM dispatch. Haiku by default."
+
+  - key: max_tokens
+    input_type: number
+    requirement: optional
+    default: "512"
+    description: "Max output tokens for the sub-call. Keep tight; sub-answers should be terse."
+
+extensions:
+  - type: stdio
+    name: rlm-mcp-server
+    cmd: uv
+    args:
+      - run
+      - --with
+      - anthropic
+      - --with
+      - mcp
+      - python
+      - "-m"
+      - harness_rlm.mcp_server
+    env_keys:
+      - ANTHROPIC_API_KEY
+    timeout: 120
+    bundled: false
+    description: "Same MCP server as the parent recipe; registered here so the sub-recipe can run standalone too."
+
+settings:
+  goose_provider: "anthropic"
+  temperature: 0.0
+  max_turns: 3
+
+response:
+  json_schema:
+    type: object
+    properties:
+      answer:
+        type: string
+        description: "The sub-LLM's concise answer to `question` given `chunk`."
+    required:
+      - answer
+
+instructions: |
+  You have exactly one job: call the `llm_query` MCP tool **once** against the
+  `rlm-mcp-server` extension, then return the result.
+
+  Do not plan. Do not summarise. Do not ask the user for more info.
+  Do not call any other tool.
+
+  Call signature:
+    mcp__rlm-mcp-server__llm_query(
+      prompt   = "<see template below>",
+      model    = "{{ sub_model }}",
+      max_tokens = {{ max_tokens }},
+      system   = "Answer briefly and factually. If the chunk does not contain the answer, say exactly: NOT_IN_CHUNK."
+    )
+
+  Prompt template (fill placeholders literally, no added commentary):
+
+    Question: {{ question }}
+
+    Chunk:
+    ---
+    {{ chunk }}
+    ---
+
+    Return the answer in 1-3 sentences, grounded only in the chunk above.
+
+  Once the tool returns, output only the `answer` JSON field with the tool's
+  response text. No preamble, no explanation.
+
+prompt: |
+  Dispatch the single llm_query call now with the provided chunk and question.

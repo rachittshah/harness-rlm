@@ -32,6 +32,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/harness_rlm"]
+# Include the shared harness-agnostic skill so load_shared_skill() can find it
+# in the installed wheel layout, not just the editable/dev layout.
+[tool.hatch.build.targets.wheel.force-include]
+"skill/SKILL.md" = "harness_rlm/skill/SKILL.md"
 
 [tool.ruff]
 line-length = 100
