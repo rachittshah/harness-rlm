@@ -1,97 +1,88 @@
 # harness-rlm
 
-**Use any existing coding-agent harness as a Recursive Language Model (RLM) substrate.**
+**Every modern coding-agent harness already ships the eight primitives a Recursive Language Model needs.** Sandboxed exec, sub-agent spawn, model routing, trajectory logging, budget enforcement — Claude Code has them, Goose has them, Codex has them, OpenCode has them. The gap isn't capability. It's naming.
 
-Based on [Zhang, Kraska, Khattab — "Recursive Language Models" (arXiv 2512.24601)](https://arxiv.org/abs/2512.24601). Instead of forcing context into one call, RLMs give the root model programmatic access to context via a REPL and recursive sub-LLM calls. This repo ships thin **adapters** that make four production coding harnesses behave as RLM substrates, without forking any of them.
+**What that's worth.** Recursive Language Models (Zhang, Kraska, Khattab, [arXiv:2512.24601](https://arxiv.org/abs/2512.24601), Dec 2025) let an LLM programmatically slice its context in a Python REPL and dispatch cheap sub-LLM calls on chunks. On BrowseComp-Plus with 1,000 documents (6–11M tokens), flat GPT-5 scores **0%** — over-context. The same GPT-5 wrapped in the RLM pattern with GPT-5-mini as sub-LLM scores **91.33%** at **$0.99/query**. The paradigm doesn't cost more — it accesses capability flat LLMs cannot reach.
 
-## Four adapters, one core
+**What this repo ships.** Four harness adapters, one shared Open Agent Skills Standard skill, one universal MCP server for sub-LLM dispatch via direct Anthropic API (bypasses the ~50K-token tax of harness-native sub-agent spawn).
 
-| Adapter | Status | Primitive score (R6 §3) | MVP effort | Install |
-|---|---|---|---|---|
-| [Claude Code](adapters/claude_code/) | ✅ Shipped, τ²-bench verified | 19/24 | 1–2 days | `./install.sh --harness claude-code` |
-| [Goose](adapters/goose/) | ✅ Recipe + subrecipe | 22/24 (highest) | 2–3 days | `./install.sh --harness goose` |
-| [Codex (OpenAI)](adapters/codex/) | ✅ Open Agent Skills standard-compliant | 17/24 | 2–3 days | `./install.sh --harness codex` |
-| [OpenCode](adapters/opencode/) | ✅ TypeScript plugin | 21/24 | 2–3 days | `./install.sh --harness opencode` |
-| Cursor CLI | Roadmap (R6 §7: wait for native sub-agent) | 16/24 | — | — |
-| Cline | Roadmap (no-MCP restriction blocks context-as-variable) | 17/24 | — | — |
-| Aider | ✗ Dropped (architect/editor is a pipeline, not recursion) | 12/24 | — | — |
+Deep dives: **[docs/WHAT_IS_RLM.md](docs/WHAT_IS_RLM.md)** · **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)**
 
-Install all four: `./install.sh --harness all`.
+---
 
-## Repo architecture
+## Adapters
 
-```
-harness-rlm/
-├── src/harness_rlm/
-│   ├── core.py            ← pure-Python helpers (BudgetGuard, chunk_context, parse_ingest_directives)
-│   ├── mcp_server.py      ← universal sub-LLM dispatch via direct Anthropic API (any MCP-enabled harness)
-│   ├── trajectory.py      ← trajectory logging
-│   └── models.py          ← Pydantic contracts
-├── skill/
-│   └── SKILL.md           ← harness-agnostic RLM loop spec, Open Agent Skills Standard format
-├── adapters/
-│   ├── claude_code/       ← Claude Code adapter (skill + subagent + 2 hooks)
-│   ├── goose/             ← Goose recipe + subrecipe + MCP config
-│   ├── codex/             ← Codex skill (Open Agent Skills Standard) + budget orchestrator
-│   └── opencode/          ← OpenCode TypeScript plugin + custom subagent
-├── tau2_integration/      ← tau2-bench custom agent (invokes Claude Code headless today; cross-harness WIP)
-├── tests/                 ← 87 pytest tests, all passing
-└── install.sh             ← --harness {claude-code|goose|codex|opencode|all}
-```
+| Adapter | Status | Primitive score | Install |
+|---|---|---|---|
+| [Claude Code](adapters/claude_code/) | τ²-bench verified | 19/24 | `./install.sh --harness claude-code` |
+| [Goose](adapters/goose/) | Recipe + subrecipe | **22/24** (highest) | `./install.sh --harness goose` |
+| [Codex (OpenAI)](adapters/codex/) | Open Agent Skills Standard | 17/24 | `./install.sh --harness codex` |
+| [OpenCode](adapters/opencode/) | TypeScript plugin | 21/24 | `./install.sh --harness opencode` |
+| Cursor CLI | Roadmap — waiting on native sub-agent | 16/24 | — |
+| Cline | Roadmap — waiting on MCP-accessible subagents | 17/24 | — |
+| Aider | Dropped — architect/editor is a pipeline, not recursion | 12/24 | — |
 
-## Why "any harness" works
+Primitive scores from the harness landscape analysis (R6 §3): 7 harnesses × 8 primitives, each cell coded NATIVE / SHIM-OK / SHIM-EXPENSIVE / IMPOSSIBLE.
 
-1. **MCP server is universal.** `src/harness_rlm/mcp_server.py` exposes `llm_query(prompt, model)` over stdio MCP — every modern harness (Claude Code, Goose, OpenCode, Codex, Cursor, Cline) supports MCP. Sub-LLM dispatch is decoupled from the harness.
-2. **Open Agent Skills Standard.** The shared `skill/SKILL.md` uses the open standard (name + description only, no harness-specific frontmatter). Each adapter wraps it with harness-specific metadata and hooks.
-3. **Budget enforcement via hooks.** Every harness has *some* hook / middleware / wrapper-script mechanism. The `BudgetGuard` Python class in `core.py` is harness-agnostic — each adapter wires it into the local hook system.
-
-## The non-negotiable design constraint
-
-**Text-only sub-LLM calls go through the MCP server (direct Anthropic API), NOT the harness's native sub-agent primitive.** Native sub-agents (Claude Code's `Task`, OpenCode's `Task`, Goose subrecipes, Codex's shell-out) all carry harness overhead — re-injection of system prompt + CLAUDE.md + MCP tool schemas. For Claude Code this has been measured at ~50K tokens per spawn. For an RLM with 40 sub-calls, this is the difference between $1.73/run and $0.79/run. Every adapter enforces this rule.
-
-## Install
+## Quickstart
 
 ```bash
 git clone https://github.com/rachittshah/harness-rlm
 cd harness-rlm
 uv sync --extra dev
-./install.sh --harness all   # or --harness claude-code|goose|codex|opencode
+./install.sh --harness all          # or --harness claude-code
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Smoke-test the MCP server (single Haiku round-trip, ~$0.00008)
+uv run python src/harness_rlm/mcp_server.py --selftest
+# → [selftest] PASS
+
+# Exercise the skill via Claude Code headless
+claude -p "/rlm summarize /file /path/to/100k_doc.md"
 ```
 
-Then register the MCP server in your harness's config — each adapter's `README.md` + `mcp-config.md` has the exact config block.
+Register the MCP server in your harness's config — each adapter's `README.md` + `mcp-config.md` has the exact config block.
 
-## Usage — Claude Code example
+## Architecture
 
-```bash
-# Interactive
-claude
-> /rlm summarize this policy and find contradictions /file /path/to/100k_doc.md
-
-# Headless
-claude -p "/rlm summarize this policy /file /path/to/doc.md"
+```
+harness-rlm/
+├── src/harness_rlm/
+│   ├── core.py          ← BudgetGuard, chunk_context, parse_ingest_directives
+│   ├── mcp_server.py    ← universal sub-LLM dispatch (stdio MCP → Anthropic API)
+│   ├── trajectory.py    ← session state + append-only trajectory log
+│   └── models.py        ← Pydantic request/response contracts
+├── skill/
+│   └── SKILL.md         ← harness-agnostic RLM loop spec (Open Agent Skills Standard)
+├── adapters/
+│   ├── claude_code/     ← skill + subagent + 2 hooks
+│   ├── goose/           ← recipe + subrecipe + MCP config
+│   ├── codex/           ← skill + budget orchestrator + typed-FINAL JSON schema
+│   └── opencode/        ← TypeScript plugin + custom subagent
+├── tau2_integration/    ← tau2-bench custom agent (Claude Code headless)
+├── tests/               ← 87 pytest tests (all passing)
+└── install.sh           ← --harness {claude-code|goose|codex|opencode|all}
 ```
 
-Other harnesses: see per-adapter README.
+The split is deliberate: core + MCP + skill are harness-independent. Each adapter is a thin shell (~150–900 LOC) that wires harness-specific config / hooks / plugins to the shared core.
 
-## τ²-Bench submission (initial end-to-end, 2026-04-21)
+## τ²-Bench plumbing check (2026-04-21)
 
-Canary run to verify the plumbing: `claude -p` (Claude Code headless) → `ClaudeHeadlessAgent` → tau2 orchestrator → airline domain, user simulator on GPT-4.1.
+End-to-end verification that Claude Code headless → `ClaudeHeadlessAgent` → tau2 orchestrator runs cleanly. **Not a leaderboard submission** — the leaderboard requires 50 tasks × 4 trials × 3 domains; this is 3 tasks × 1 trial × 1 domain as plumbing canary.
 
 | Task | Reward | Messages | Notes |
 |---|---|---|---|
-| 0 | 1.0 ✓ | 12 | Agent correctly refused cancel+refund (basic economy, >24h, no insurance) |
-| 1 | 0.0 ✗ | 21 | Hit `max_steps=20` ceiling — conversation not resolved, not incorrect action |
-| 2 | 1.0 ✓ | 20 | Policy-correct |
+| 0 | 1.0 | 12 | Agent correctly refused cancel+refund (basic economy, >24h, no insurance) |
+| 1 | 0.0 | 21 | Hit `max_steps=20` ceiling — conversation not resolved, not incorrect action |
+| 2 | 1.0 | 20 | Policy-correct |
 
-**Mean reward**: 0.667 (2/3) · **Wall-clock**: 285s · **Model**: `claude-opus-4-7[1m]` · **Seed**: 42
+Mean reward 0.667 · wall-clock 285s · `claude-opus-4-7[1m]` · seed 42.
 
-Results file: `results/tau2_airline_3tasks.json`. Full trajectories in `/tmp/rlm/tau2_invocations.jsonl`.
+τ²-bench airline policies are ~5K chars — too short to trigger the RLM loop (threshold >100K tokens). The right showcase for harness-rlm is BrowseComp-Plus / OOLONG-Pairs / LongBench-v2, where RLM decomposition beats flat LLMs by orders of magnitude. See [docs/WHAT_IS_RLM.md](docs/WHAT_IS_RLM.md#when-not-to-use-an-rlm).
 
-**This is not a leaderboard submission.** τ²-bench leaderboard requires 50 tasks × 4 trials per domain across airline+retail+telecom — this 3-task run is plumbing verification only. See [this repo's rationale](#) for why τ²-bench-airline is the wrong showcase for harness-rlm (short policies don't trigger RLM decomposition); the right showcase is BrowseComp-Plus / OOLONG-Pairs / LongBench-v2.
-
-**Reproduce**: 
+Reproduce:
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-... ; export OPENAI_API_KEY=sk-...
+export ANTHROPIC_API_KEY=...; export OPENAI_API_KEY=...
 uv pip install -e /path/to/tau2-bench
 uv run python examples/run_tau2_py.py --num-tasks 3 --agent-llm 'claude-opus-4-7[1m]' \
   --out results/tau2_airline_3tasks.json
@@ -107,17 +98,17 @@ uv run python -m pytest tests/ -q
 
 ## Roadmap
 
-- **Cross-harness tau2-bench runs.** Parameterize `tau2_integration/claude_headless_agent.py` on `--agent-bin` so `codex exec` and `goose run` can be the tau2 agent's backend CLI with minor command-builder swaps.
-- **BrowseComp-Plus demo.** Where the RLM decomposition actually matters — 6–11M token inputs, paper reports 91.33% vs 0% for flat GPT-5.
-- **Cursor CLI adapter.** Waiting for native sub-agent primitive from Anysphere; shell-out-to-self shim works but is expensive.
-- **Cline adapter.** Waiting for MCP-accessible subagents (current no-MCP restriction blocks context-as-variable).
+- **Cross-harness tau2 runs.** `tau2_integration/claude_headless_agent.py` is Claude-Code-only; parameterizing on `--agent-bin` adds codex/goose backends via small command-builder dispatch.
+- **BrowseComp-Plus demo.** The right benchmark to showcase harness-rlm — 6–11M token inputs, where RLMs beat flat LLMs 91% vs 0%. `examples/browsecomp_demo.py` pending.
+- **Cursor CLI adapter.** Blocked on native sub-agent primitive from Anysphere.
+- **Cline adapter.** Blocked on MCP-accessible subagents (current no-MCP restriction breaks context-as-variable).
+- **Post-trained root model.** The paper ships `mit-oasys/rlm-qwen3-8b-v0.1` (+28.3% over vanilla Qwen3-8B). A post-train against this repo's trajectory format is worth measuring.
 
 ## References
 
-- RLM paper: [arXiv:2512.24601](https://arxiv.org/abs/2512.24601)
+- RLM paper: [arXiv:2512.24601](https://arxiv.org/abs/2512.24601) · [author blog](https://alexzhang13.github.io/blog/2025/rlm/)
 - Reference library: [alexzhang13/rlm](https://github.com/alexzhang13/rlm)
-- DSPy module: [dspy.ai/api/modules/RLM](https://dspy.ai/api/modules/RLM/)
+- DSPy RLM module: [dspy.ai/api/modules/RLM](https://dspy.ai/api/modules/RLM/)
 - CLI precedent: [viplismism/rlm-cli](https://github.com/viplismism/rlm-cli)
 - Open Agent Skills Standard: [agentskills.io](https://agentskills.io/specification)
 - τ²-Bench: [sierra-research/tau2-bench](https://github.com/sierra-research/tau2-bench)
-- Primitive-scoring research: `/Users/rshah/rlm-research/R6_harness_landscape.md` (local)
