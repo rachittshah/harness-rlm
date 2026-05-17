@@ -4,9 +4,9 @@
 
 **What that's worth.** Recursive Language Models (Zhang, Kraska, Khattab, [arXiv:2512.24601](https://arxiv.org/abs/2512.24601), Dec 2025) let an LLM programmatically slice its context in a Python REPL and dispatch cheap sub-LLM calls on chunks. On BrowseComp-Plus with 1,000 documents (6–11M tokens), flat GPT-5 scores **0%** — over-context. The same GPT-5 wrapped in the RLM pattern with GPT-5-mini as sub-LLM scores **91.33%** at **$0.99/query**. The paradigm doesn't cost more — it accesses capability flat LLMs cannot reach.
 
-**What this repo ships.** Four harness adapters, one shared Open Agent Skills Standard skill, one universal MCP server for sub-LLM dispatch via direct Anthropic API (bypasses the ~50K-token tax of harness-native sub-agent spawn).
+**What this repo ships.** A composable Python harness (DSPy-style `Signature` / `Module`, RLM, GEPA optimizer, Pi-style 4-tool agent loop with hooks, Codex-style TOML subagents + CSV batch dispatch) plus four existing harness adapters (Claude Code / Goose / Codex / OpenCode), one shared Open Agent Skills Standard skill, and one MCP server for sub-LLM dispatch.
 
-Deep dives: **[docs/WHAT_IS_RLM.md](docs/WHAT_IS_RLM.md)** · **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)**
+Deep dives: **[docs/HARNESS_DESIGN.md](docs/HARNESS_DESIGN.md)** · **[docs/WHAT_IS_RLM.md](docs/WHAT_IS_RLM.md)** · **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)**
 
 ---
 
@@ -48,10 +48,24 @@ Register the MCP server in your harness's config — each adapter's `README.md` 
 ```
 harness-rlm/
 ├── src/harness_rlm/
-│   ├── core.py          ← BudgetGuard, chunk_context, parse_ingest_directives
-│   ├── mcp_server.py    ← universal sub-LLM dispatch (stdio MCP → Anthropic API)
+│   ├── core.py          ← BudgetGuard, chunk_context, ingest parsing
 │   ├── trajectory.py    ← session state + append-only trajectory log
-│   └── models.py        ← Pydantic request/response contracts
+│   ├── models.py        ← Pydantic request/response contracts
+│   ├── mcp_server.py    ← MCP transport for harness-native sub-LLM dispatch
+│   │   ─ NEW LAYER ─────────────────────────────────────────────────────
+│   ├── signatures.py    ← DSPy-style typed I/O contracts
+│   ├── modules.py       ← Module base + Predict, ChainOfThought, Retry
+│   ├── llm.py           ← Anthropic LM client + global default
+│   ├── claude_cli_lm.py ← Shell-out LM provider (`claude -p` backend)
+│   ├── rlm.py           ← RLM Module: strategy-driven recursive decomposition
+│   ├── gepa.py          ← Pareto-frontier reflective prompt optimizer
+│   ├── orchestrator.py  ← Multi-step Orchestrator + SessionStore + compress()
+│   ├── tools.py         ← Pi-style AgentTool + 4-tool core (read/write/edit/bash)
+│   ├── agent_loop.py    ← Pi-style hooked agent loop (5 hook seams)
+│   ├── subagents.py     ← Codex-style declarative TOML subagents + sandbox tiers
+│   ├── batch.py         ← Codex-style spawn_agents_on_csv batch dispatch
+│   ├── harness.py       ← Top-level run() + CLI
+│   └── __main__.py      ← `python -m harness_rlm`
 ├── skill/
 │   └── SKILL.md         ← harness-agnostic RLM loop spec (Open Agent Skills Standard)
 ├── adapters/
@@ -59,12 +73,15 @@ harness-rlm/
 │   ├── goose/           ← recipe + subrecipe + MCP config
 │   ├── codex/           ← skill + budget orchestrator + typed-FINAL JSON schema
 │   └── opencode/        ← TypeScript plugin + custom subagent
+├── .harness-rlm/agents/ ← Codex-style subagent TOML files (project-local)
 ├── tau2_integration/    ← tau2-bench custom agent (Claude Code headless)
-├── tests/               ← 87 pytest tests (all passing)
+├── tests/               ← 193 pytest tests (all passing)
+├── examples/
+│   └── e2e_claude_p.py  ← End-to-end demo via `claude -p` (no API key needed)
 └── install.sh           ← --harness {claude-code|goose|codex|opencode|all}
 ```
 
-The split is deliberate: core + MCP + skill are harness-independent. Each adapter is a thin shell (~150–900 LOC) that wires harness-specific config / hooks / plugins to the shared core.
+The split is deliberate: each layer is usable standalone. `Predict` works without `Orchestrator`; `AgentLoop` works without `RLM`; `GEPA` optimizes any `Module`. Per-feature deep-dive: **[docs/HARNESS_DESIGN.md](docs/HARNESS_DESIGN.md)**.
 
 ## τ²-Bench plumbing check (2026-04-21)
 
@@ -93,8 +110,16 @@ uv run python examples/run_tau2_py.py --num-tasks 3 --agent-llm 'claude-opus-4-7
 ```bash
 uv sync --extra dev
 uv run python -m pytest tests/ -q
-# 87 passed in ~2s
+# 193 passed in ~3s
 ```
+
+## End-to-end via `claude -p` (no API key needed)
+
+```bash
+uv run python examples/e2e_claude_p.py
+```
+
+This exercises `ClaudeCLILM` → `Predict` → `RLM` → `Orchestrator` end-to-end using `claude -p` (Claude Code headless) as the LM backend. Verified on 2026-05-17: RLM correctly extracted a hidden date from a 50K-char document in 4 calls / $0.013 / 32s. Results: [results/e2e_claude_p.json](results/e2e_claude_p.json).
 
 ## Roadmap
 
