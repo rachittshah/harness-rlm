@@ -27,10 +27,12 @@ from __future__ import annotations
 from tau2.registry import registry
 
 from tau2_integration.claude_headless_agent import create_claude_headless_agent
+from tau2_integration.claude_headless_user import ClaudeHeadlessUserSimulator
 from tau2_integration.rlm_agent import create_rlm_agent
 
 CLAUDE_HEADLESS_AGENT_NAME = "harness-rlm/claude-headless"
 RLM_AGENT_NAME = "harness-rlm/rlm"
+CLAUDE_HEADLESS_USER_NAME = "harness-rlm/claude-headless-user"
 
 
 def register(*, overwrite: bool = False) -> list[str]:
@@ -55,13 +57,20 @@ def register(*, overwrite: bool = False) -> list[str]:
     for name, factory in pairs:
         if name in existing:
             if overwrite:
-                # Registry API has no unregister; mutate the private dict.
-                # This is safe as long as overwrite=True is opt-in.
                 registry._agent_factories.pop(name, None)  # noqa: SLF001
             else:
                 continue
         registry.register_agent_factory(factory, name)
         registered.append(name)
+
+    # Register the claude -p user simulator.
+    existing_users = set(getattr(registry, "_users", {}).keys())
+    if CLAUDE_HEADLESS_USER_NAME in existing_users:
+        if overwrite:
+            registry._users.pop(CLAUDE_HEADLESS_USER_NAME, None)  # noqa: SLF001
+    if CLAUDE_HEADLESS_USER_NAME not in registry._users:
+        registry.register_user(ClaudeHeadlessUserSimulator, CLAUDE_HEADLESS_USER_NAME)
+        registered.append(CLAUDE_HEADLESS_USER_NAME)
 
     return registered
 

@@ -49,6 +49,16 @@ def _parse_args() -> argparse.Namespace:
         help="LLM identifier for the user simulator (passed to tau2).",
     )
     p.add_argument(
+        "--user",
+        default="user_simulator",
+        help="User-simulator implementation name. Use 'harness-rlm/claude-headless-user' to drive the user via claude -p (no OpenAI key needed).",
+    )
+    p.add_argument(
+        "--user-effort",
+        default=None,
+        help="Reasoning effort for the claude-headless user simulator.",
+    )
+    p.add_argument(
         "--agent-llm",
         default=None,
         help=(
@@ -175,12 +185,23 @@ def main() -> int:
         # Make path absolute so claude -p resolves it regardless of cwd.
         agent_llm_args["mcp_config_path"] = str(Path(args.mcp_config).resolve())
 
+    user_llm_args: dict[str, Any] = {}
+    if args.user_effort:
+        user_llm_args["effort"] = args.user_effort
+    if args.mcp_config:
+        user_llm_args["mcp_config_path"] = str(Path(args.mcp_config).resolve())
+    # When using the claude-headless user, the user LLM identifier is just the
+    # claude model string (the agent passes it as --model). We still set it.
+    user_llm_args["model"] = args.user_llm
+
     config_kwargs: dict[str, Any] = {
         "domain": args.domain,
         "agent": args.agent,
+        "user": args.user,
         "llm_agent": args.agent_llm or "",
         "llm_args_agent": agent_llm_args,
         "llm_user": args.user_llm,
+        "llm_args_user": user_llm_args,
         "num_trials": args.num_trials,
         "max_steps": args.max_steps,
         "seed": args.seed,
