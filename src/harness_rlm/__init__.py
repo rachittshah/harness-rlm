@@ -33,6 +33,7 @@ from harness_rlm.modules import (
     Retry,
     Trace,
 )
+from harness_rlm.gepa import GEPA, Candidate, GEPAResult, ScoreWithFeedback
 from harness_rlm.rlm import RLM, RLMConfig
 from harness_rlm.signatures import Field_, Signature, SignatureParseError
 
@@ -69,4 +70,9 @@ __all__ = [
     # rlm
     "RLM",
     "RLMConfig",
+    # gepa
+    "GEPA",
+    "GEPAResult",
+    "Candidate",
+    "ScoreWithFeedback",
 ]
