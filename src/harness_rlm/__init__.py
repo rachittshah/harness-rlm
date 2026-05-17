@@ -33,6 +33,7 @@ from harness_rlm.modules import (
     Retry,
     Trace,
 )
+from harness_rlm.rlm import RLM, RLMConfig
 from harness_rlm.signatures import Field_, Signature, SignatureParseError
 
 __version__ = "0.2.0"
@@ -65,4 +66,7 @@ __all__ = [
     "LM",
     "configure",
     "get_lm",
+    # rlm
+    "RLM",
+    "RLMConfig",
 ]
