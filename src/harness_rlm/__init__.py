@@ -33,6 +33,7 @@ from harness_rlm.modules import (
     Retry,
     Trace,
 )
+from harness_rlm.claude_cli_lm import ClaudeCLILM
 from harness_rlm.gepa import GEPA, Candidate, GEPAResult, ScoreWithFeedback
 from harness_rlm.harness import RunResult, run
 from harness_rlm.orchestrator import (
@@ -73,6 +74,7 @@ __all__ = [
     "Trace",
     # llm
     "LM",
+    "ClaudeCLILM",
     "configure",
     "get_lm",
     # rlm
