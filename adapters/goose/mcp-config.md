@@ -1,4 +1,10 @@
-# Registering `rlm-mcp-server` with Goose
+# Registering `harness-rlm` MCP server with Goose
+
+The MCP server exposes **10 tools** — `llm_query`, `rlm_run`, `predict`,
+`chain_of_thought`, `best_of_n`, `compress_text`, `chunk_text`,
+`dispatch_subagent`, `list_subagents`, `estimate_cost`. Full schema:
+[../../docs/MCP_TOOLS.md](../../docs/MCP_TOOLS.md). Selection decision tree:
+[../../skill/SKILL.md](../../skill/SKILL.md).
 
 Goose's MCP extensions live in the user's global config file:
 
@@ -37,10 +43,11 @@ extensions:
       - ANTHROPIC_API_KEY
     timeout: 300
     description: >-
-      RLM sub-LLM dispatcher. Exposes a single tool `llm_query(prompt, model,
-      max_tokens?, system?)` that calls the Anthropic API directly. Used by the
-      `rlm` recipe to fan out cheap per-chunk queries without paying Goose's
-      per-subagent process-boot overhead.
+      harness-rlm — 10 MCP tools for long-context decomposition (rlm_run),
+      typed predict / chain_of_thought, ensemble voting (best_of_n),
+      compression, chunking, declarative subagent dispatch, and cost estimation.
+      Calls the Anthropic API directly to bypass per-subagent process-boot
+      overhead.
 ```
 
 ### Notes on the fields

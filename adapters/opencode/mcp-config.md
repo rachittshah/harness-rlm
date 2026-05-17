@@ -1,4 +1,10 @@
-# Registering `rlm-mcp-server` in OpenCode
+# Registering `harness-rlm` MCP server in OpenCode
+
+The MCP server exposes **10 tools** — `llm_query`, `rlm_run`, `predict`,
+`chain_of_thought`, `best_of_n`, `compress_text`, `chunk_text`,
+`dispatch_subagent`, `list_subagents`, `estimate_cost`. Full schema:
+[../../docs/MCP_TOOLS.md](../../docs/MCP_TOOLS.md). Selection decision tree:
+[../../skill/SKILL.md](../../skill/SKILL.md).
 
 OpenCode's MCP config lives in the top-level `opencode.json` (or
 `opencode.jsonc`). Global config: `~/.config/opencode/opencode.json`.
@@ -36,11 +42,14 @@ Replace `/Users/rshah/harness-rlm` with the absolute path to your clone.
 
 ## What this exposes
 
-The MCP server in `src/harness_rlm/mcp_server.py` advertises a single tool:
-`llm_query(prompt, model, max_tokens?, system?) -> str`. Under OpenCode's
-MCP-tool-namespacing convention the tool becomes addressable as
-`mcp__rlm__llm_query` (or `rlm_llm_query`, depending on the client build
-— the plugin tries both by name in `plugins/rlm.ts::subLlmQuery`).
+The MCP server in `src/harness_rlm/mcp_server.py` advertises **10 tools**:
+`llm_query`, `rlm_run`, `predict`, `chain_of_thought`, `best_of_n`,
+`compress_text`, `chunk_text`, `dispatch_subagent`, `list_subagents`,
+`estimate_cost`. Under OpenCode's MCP-tool-namespacing convention each
+becomes addressable as `mcp__rlm__<tool>` (e.g. `mcp__rlm__llm_query`,
+`mcp__rlm__rlm_run`). The plugin (`plugins/rlm.ts`) currently only uses
+`llm_query` for sub-LLM dispatch; the other 9 tools are available directly
+to the agent. Schemas in [../../docs/MCP_TOOLS.md](../../docs/MCP_TOOLS.md).
 
 ## Merging with existing config
 

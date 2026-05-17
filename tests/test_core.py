@@ -214,9 +214,10 @@ class TestLoadSharedSkill:
         body = load_shared_skill()
         # Frontmatter delimiters should be gone.
         assert not body.startswith("---")
-        # But the body content should be there.
+        # Canonical content present (RLM + the tool catalog).
         assert "Recursive Language Model" in body
-        assert "Budget invariants" in body
+        # The expanded skill catalogues the MCP tools — at least one must appear.
+        assert any(tool in body for tool in ("rlm_run", "llm_query", "predict"))
 
     def test_is_nonempty(self):
         body = load_shared_skill()

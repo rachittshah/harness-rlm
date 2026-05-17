@@ -100,7 +100,45 @@ Most LLM harnesses pick one of these:
 | MCP-as-client | MCP SDK | `mcp_client.py` (`MCPToolset`) |
 | Trace visualization | LangSmith / Helicone | `trace_viz.py` (`format_trace` + Mermaid) |
 
-Plus four ready-made harness adapters (Claude Code / Goose / Codex / OpenCode) and one MCP server for sub-LLM dispatch when running inside an agentic harness.
+Plus four ready-made harness adapters (Claude Code / Goose / Codex / OpenCode) and **one MCP server exposing 10 tools** that lets any MCP-compatible client (Claude Desktop, Cursor, Codex CLI, Goose, OpenCode, Cline, custom clients) drive the harness end-to-end. See [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) for the schemas and [skill/SKILL.md](skill/SKILL.md) for the harness-agnostic decision tree.
+
+---
+
+## Use from anywhere via MCP
+
+Once `rlm-mcp-server` is on PATH (installed by `uv sync` / `pip install -e .`), any MCP client can drive the harness. The 10 tools are:
+
+| Tool | Purpose |
+|---|---|
+| `llm_query` | single LLM call (backwards-compat: returns raw text) |
+| `rlm_run` | recursive decomposition over long documents |
+| `predict` | typed signature → 1 call → parsed fields |
+| `chain_of_thought` | predict with explicit reasoning slot |
+| `best_of_n` | N samples + majority vote (self-consistency) |
+| `compress_text` | LM-summarised compaction |
+| `chunk_text` | deterministic overlap chunking (no LM) |
+| `dispatch_subagent` | run a TOML-declared subagent role |
+| `list_subagents` | discover available subagent specs |
+| `estimate_cost` | USD-cost calculator (no LM) |
+
+Per-client config:
+
+| Client | Config file | Block |
+|---|---|---|
+| Claude Code / Claude Desktop | `.mcp.json` / `~/.claude/settings.json` | `{"mcpServers": {"harness-rlm": {"command": "rlm-mcp-server", "env": {"ANTHROPIC_API_KEY": "..."}}}}` |
+| Codex CLI | `~/.codex/config.toml` | `[mcp_servers.harness-rlm]`<br>`command = "rlm-mcp-server"` |
+| Goose | `~/.config/goose/config.yaml` | `extensions:`<br>` harness-rlm:`<br>` type: stdio`<br>` cmd: rlm-mcp-server` |
+| OpenCode | `~/.config/opencode/opencode.json` | `{"mcp": {"harness-rlm": {"type": "local", "command": ["rlm-mcp-server"]}}}` |
+| Cursor | `~/.cursor/mcp.json` | `{"mcpServers": {"harness-rlm": {"command": "rlm-mcp-server"}}}` |
+
+Verify with:
+
+```bash
+rlm-mcp-server --list-tools | head -5    # JSON tool catalog
+rlm-mcp-server --selftest                # canary round-trip
+```
+
+Per-harness setup details are under `adapters/<harness>/mcp-config.md`.
 
 ---
 

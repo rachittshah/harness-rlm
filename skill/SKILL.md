@@ -1,179 +1,285 @@
 ---
-name: rlm
-description: Use when the user has a long document, dataset, or transcript that exceeds the model's effective context window (>100K tokens) AND needs programmatic decomposition + synthesis, or when the user explicitly invokes `/rlm` or asks to "run RLM" / "use recursive language model". Not for simple Q&A that fits in one prompt. Implements Zhang, Kraska, Khattab — Recursive Language Models (arXiv:2512.24601).
+name: harness-rlm
+description: |
+  Universal harness-rlm skill — invoke recursive long-context LLM decomposition,
+  prompt evolution, ensemble voting, and declarative subagent dispatch from any
+  agent that speaks MCP. Use when the user needs to (a) answer over a >100K-token
+  context, (b) sample-and-vote on hard reasoning, (c) run an isolated subagent
+  role, (d) batch-evaluate a Module over a CSV. Implements Zhang/Kraska/Khattab
+  arXiv:2512.24601 plus GEPA (arXiv:2507.19457) and Pi-mono's minimal tool loop.
 ---
 
-# Recursive Language Model (RLM) Harness
+# harness-rlm — universal skill
 
-You are the **root LM** in a Recursive Language Model loop. Your job is to answer the user's question over a context too large to fit in a single prompt, by programmatically exploring the context in a code-execution environment and dispatching cheap sub-LLM calls (Haiku or equivalent) against slices of it.
+You are an agent that has been given access to the **harness-rlm MCP server**. The server exposes **10 tools** covering the full surface of harness-rlm: Recursive Language Model decomposition (long-context Q&A), prompt-evolution-optimized modules, ensemble voting, declarative subagents. This skill teaches you which tool to pick.
 
-Paper: [arXiv:2512.24601](https://arxiv.org/abs/2512.24601). Reference libraries: `dspy.RLM`, `alexzhang13/rlm`, `viplismism/rlm-cli`.
-
-This skill is **harness-agnostic**. Adapter-specific plumbing (tool names, hook paths, session storage) is documented in the adapter's own SKILL.md under `adapters/<harness>/`. The instructions below apply verbatim in any harness that supports the Open Agent Skills standard.
-
-## Budget invariants (DO NOT exceed)
-
-| Budget | Cap | Enforced by |
-|---|---|---|
-| `max_iterations` | 20 | Harness max-turn setting + manual check |
-| `max_llm_calls` | 50 | Pre-tool hook (blocks when exceeded) |
-| `max_output_chars` | 10000 per code cell | Manual truncate + warn |
-| `sub_model` | Cheap model (Haiku 4.5 or equivalent) | Via `rlm` MCP server's `llm_query` tool, or your harness's native sub-agent mechanism |
-
-If the user has not set budgets explicitly, use these defaults (matching `dspy.RLM`).
+The skill is **harness-agnostic**: it works inside Claude Code, Claude Desktop, Cursor, Codex, Goose, OpenCode, Cline, or any custom MCP client. The tool names are the same everywhere. Adapter-specific config (where to drop the MCP block) lives under `adapters/<harness>/mcp-config.md`.
 
 ---
 
-## Step 0 — Ingest context
+## The 10 tools at a glance
 
-Parse the user's message for context markers (same verbs as `rlm-cli`):
-
-| Marker | Source | Action |
+| Tool | Use when | LM cost |
 |---|---|---|
-| `/file <path>` | Local file | Read the file, persist raw bytes to the session store (default: `/tmp/rlm/context.pkl`) |
-| `/url <url>` | Web URL | Fetch the URL, persist the returned text |
-| `/paste` | Inline (follows marker) | Persist everything after `/paste` up to next marker or end-of-message |
+| `llm_query` | You need a single cheap LLM call (text in → text out). | 1 call |
+| `rlm_run` | You have a long context (>100K tokens) and a question over it. | 1+chunks |
+| `predict` | You want typed inputs/outputs from one LLM call. | 1 call |
+| `chain_of_thought` | Same as predict but with explicit reasoning. | 1 call |
+| `best_of_n` | The answer is non-trivial and you can sample 3–5 times. | N calls |
+| `compress_text` | A rolling history is too long; you need a faithful summary. | 1 call |
+| `chunk_text` | You need to split text deterministically — no LM. | 0 calls |
+| `dispatch_subagent` | You want to delegate to a role (read-only explorer, etc.). | many |
+| `list_subagents` | You're not sure what subagent roles are available. | 0 calls |
+| `estimate_cost` | You want a cost projection before running. | 0 calls |
 
-**Ingestion boilerplate (run via your harness's shell-execution tool):**
+---
 
-```bash
-mkdir -p /tmp/rlm
-python - <<'PY'
-import pickle, hashlib, json, os
-# EDIT: replace with the actual ingested string
-with open('/tmp/rlm/raw.txt', 'r') as f:
-    content = f.read()
-pickle.dump(content, open('/tmp/rlm/context.pkl', 'wb'))
-meta = {
-    "chars": len(content),
-    "lines": content.count("\n") + 1,
-    "sha256": hashlib.sha256(content.encode()).hexdigest()[:16],
-    "preview": content[:1024],
+## Decision tree
+
+```
+Is the input >100K chars / >25K tokens?
+├── Yes → rlm_run (with strategy=map_reduce by default)
+└── No
+    ├── Does the question need reasoning? (math, multi-step inference)
+    │   ├── Yes, and accuracy is critical → best_of_n with chain_of_thought=true
+    │   ├── Yes, single sample is fine → chain_of_thought
+    │   └── No (lookup, classification) → predict
+    │
+    ├── Do you have a specific subagent role for this? (e.g. "code explorer")
+    │   ├── Yes → dispatch_subagent (after list_subagents to find the name)
+    │   └── No → fall through to predict / chain_of_thought
+    │
+    └── Just need raw text-in/text-out? → llm_query
+```
+
+---
+
+## Step-by-step: long-context Q&A
+
+When the user has a long document (>100K chars) and a question:
+
+1. **Decide the strategy**:
+   - `map_reduce` (default) — uniform document, no structure.
+   - `tree` — hierarchical document (book chapters, multi-file codebase).
+   - `filter_then_query` — sparse signal; provide a `filter_pattern` regex.
+2. **Call `rlm_run`**:
+   ```json
+   {
+     "question": "<the question>",
+     "document": "<the long text>",
+     "strategy": "map_reduce",
+     "root_model": "claude-opus-4-7",
+     "sub_model": "claude-haiku-4-5-20251001",
+     "max_llm_calls": 20
+   }
+   ```
+3. **Return the answer** plus cost + call count. The tool already enforces a budget.
+
+**When the document is `<100K chars` but `>10K chars`**: `rlm_run` will short-circuit to a flat call. Cheap and fine.
+
+**Budget envelope**: by default 20 calls max. Adjust via `max_llm_calls`. Each call's prompt preview and cost are appended to `/tmp/rlm/sub_calls.jsonl`.
+
+---
+
+## Step-by-step: hard reasoning
+
+When the user has a reasoning question (math, multi-step inference) and you want better accuracy:
+
+1. **Call `best_of_n`** with `chain_of_thought=true`:
+   ```json
+   {
+     "signature": "question -> answer",
+     "inputs": {"question": "<the reasoning task>"},
+     "n": 5,
+     "chain_of_thought": true,
+     "answer_field": "answer"
+   }
+   ```
+2. The tool samples 5 times in parallel and majority-votes on the `answer` field. Reasoning paths may differ; the answer aggregates.
+3. **Returns** `{fields, vote_distribution, calls, cost_usd}`. A unanimous vote (5/5) is high-confidence; a 3/2 split is worth flagging.
+
+Wei et al. (arXiv:2203.11171) show this lifts GSM8K / MATH accuracy by 5–15% over a single sample.
+
+---
+
+## Step-by-step: typed predict (signature-driven)
+
+When you want named outputs with a typed contract:
+
+```json
+{
+  "signature": "question, context -> answer",
+  "inputs": {"question": "...", "context": "..."},
+  "instruction": "Be brief. One sentence."
 }
-json.dump(meta, open('/tmp/rlm/meta.json', 'w'), indent=2)
-# Initialize RLM session state (signals hooks that this is an RLM run)
-json.dump({"llm_calls": 0, "iter": 0}, open('/tmp/rlm/state.json', 'w'))
-# Reset trajectory log
-open('/tmp/rlm/trajectory.jsonl', 'w').close()
-# Clear any prior FINAL from a previous session
-if os.path.exists('/tmp/rlm/FINAL.txt'):
-    os.remove('/tmp/rlm/FINAL.txt')
-print(json.dumps(meta))
-PY
 ```
 
-Report back to the user the metadata (chars, sha256, preview).
+Returns `{fields: {"answer": "..."}, cost_usd, tokens}`. The signature shorthand `"a, b -> c, d"` parses to inputs `[a, b]` and outputs `[c, d]`.
+
+For step-by-step reasoning, use `chain_of_thought` instead — it adds a `reasoning` output field that the LM fills before the answer.
 
 ---
 
-## Step 1 — Root plan
+## Step-by-step: dispatch a declarative subagent
 
-After ingesting, form an explicit decomposition plan **before touching the REPL**. State:
+When the user wants to delegate to a specialized role (e.g., a read-only codebase explorer):
 
-1. What is the user's question, in one sentence?
-2. What kind of context is loaded (prose / code / log / table / transcript)?
-3. What is the decomposition strategy? Prefer one of:
-   - **Map-reduce**: split into N chunks, ask the same question of each in parallel, synthesize.
-   - **Targeted search**: grep/filter the context for candidate regions, then query the sub-LLM on the hits.
-   - **Progressive refine**: query broadly, narrow based on answer.
-4. What are the stopping criteria? When do you emit `FINAL(answer)`?
+1. **First, discover available roles**:
+   ```json
+   {}
+   ```
+   (call `list_subagents`)
+2. **Pick a spec** by name from the returned list.
+3. **Dispatch**:
+   ```json
+   {
+     "spec_name": "explorer",
+     "task": "<the task to delegate>",
+     "parent_sandbox": "read-only",
+     "max_turns": 12
+   }
+   ```
+4. The subagent runs in its own AgentLoop with its declared model, instructions, and tool set. Returns the final text + cost.
 
-Prefer **parallel over sequential** sub-LLM calls — `dspy.RLM` treats parallelism as a first-class primitive.
-
----
-
-## Step 2 — Iterate
-
-Loop until `FINAL(answer)` is emitted OR budget is exhausted.
-
-### Primitive A: Code-execution cell
-
-Every Python cell you run **must** open with a `pickle.load` of the context and close with a `pickle.dump` back. This simulates a persistent `context` variable across cells, because most harnesses spawn a fresh shell per execution.
-
-**Template (write to `/tmp/rlm/cell.py` and run with your Python runner):**
-
-```python
-import pickle
-context = pickle.load(open('/tmp/rlm/context.pkl', 'rb'))
-
-# ------- YOUR LOGIC HERE -------
-# Examples:
-#   chunks = [context[i:i+20000] for i in range(0, len(context), 20000)]
-#   hits = [i for i, line in enumerate(context.split('\n')) if 'error' in line.lower()]
-#   import re; sections = re.split(r'^##\s', context, flags=re.M)
-# -------------------------------
-
-pickle.dump(context, open('/tmp/rlm/context.pkl', 'wb'))
-```
-
-**Keep cell stdout under 10000 chars.** If output would exceed, print a truncated head + tail and a `... [N chars truncated] ...` marker. The skill-level guard treats >10000 chars as over-budget.
-
-### Primitive B: `llm_query(prompt)` — single sub-LLM call
-
-**Prefer the `rlm` MCP server's `llm_query` tool** (direct Anthropic API, no harness re-injection overhead):
-
-```
-Tool call: llm_query   (from the `rlm` MCP server)
-Arguments:
-  prompt: "<your prompt to Haiku, including the chunk text>"
-  model:  "claude-haiku-4-5-20251001"
-```
-
-**Fallback (only if the MCP server is unavailable):** your harness's native sub-agent mechanism (e.g. `Task` in Claude Code, subrecipes in Goose, sub-sessions in OpenCode). Native sub-agents typically cost 5K–50K tokens of harness-level overhead per dispatch. Prefer MCP for pure text-in / text-out; reserve native sub-agents for sub-LLM calls that themselves need tool access.
-
-Always include in every sub-LLM prompt: *"Answer using ONLY the chunk below. Return 1-3 sentences. If the chunk does not contain the answer, output exactly: NOT_FOUND."*
-
-### Primitive C: `llm_query_parallel(prompts, chunks)` — batched sub-LLM
-
-Emit **N `llm_query` calls in a single assistant message** — most harnesses dispatch them in parallel. Do not exceed 10 parallel calls per turn (each concurrent call burns rate-limit and token budget).
-
-### Primitive D: `FINAL(answer)` sentinel
-
-When you are confident in the answer, **do not** print `FINAL(answer)` as chat text — instead write it to the sentinel file via your shell tool:
-
-```bash
-cat > /tmp/rlm/FINAL.txt <<'ANSWER'
-<your final answer, any length>
-ANSWER
-```
-
-The skill's Step 3 reads this file and returns it to the user. This mirrors the paper's `FINAL_VAR` behavior — arbitrary-size outputs that survive chat-message token caps.
+Subagents are defined as TOML files in `.harness-rlm/agents/<name>.toml` (project) or `~/.harness-rlm/agents/<name>.toml` (personal). The sandbox tier (`read-only` / `workspace-write` / `danger`) caps the subagent at the more restrictive of (parent, spec) — a child can downgrade but never escalate.
 
 ---
 
-## Step 3 — Return
+## Step-by-step: cost projection
 
-After writing `FINAL.txt`:
+Before running an expensive RLM:
 
-1. Read `/tmp/rlm/FINAL.txt` and echo the contents as your final message.
-2. Report: iterations used, `llm_calls` count (from `/tmp/rlm/state.json`), trajectory path (`/tmp/rlm/trajectory.jsonl`).
-3. If budget was exhausted **without** `FINAL.txt`, explicitly say "BUDGET EXHAUSTED — best-available answer:" and give the best partial answer from the last iteration.
+```json
+{
+  "model": "claude-opus-4-7",
+  "input_tokens": 50000,
+  "output_tokens": 2000,
+  "cached_input_tokens": 30000
+}
+```
+
+Returns:
+```json
+{
+  "rate_input_per_million": 5.0,
+  "rate_output_per_million": 25.0,
+  "cost_input_usd": 0.115,
+  "cost_output_usd": 0.05,
+  "cost_total_usd": 0.165,
+  "cache_savings_usd": 0.135
+}
+```
+
+Useful for: deciding whether to scale up an eval batch, choosing between Haiku and Opus for a task, justifying caching to a user.
 
 ---
 
-## Anti-patterns (from R2 §3)
+## Anti-patterns
 
-1. **Do NOT pass full context inline in sub-LLM prompts.** Pass a chunk (a slice of `context`) plus a targeted question. Full context defeats the purpose — that's a flat `llm_query`, not RLM.
-2. **Do NOT spawn more than 10 sub-agents in one turn.** Each native sub-agent re-injects the harness's system prompt + skills + MCP descriptions. On Claude Code that's ~50K tokens/spawn; 10 parallel = 500K tokens ≈ $3–5 on Opus root.
-3. **Do NOT let the sub-LM be the same model as the root LM.** Defeats the cost thesis. Root = Opus/Sonnet (or equivalent reasoning model). Sub = Haiku (or equivalent cheap model).
-4. **Do NOT emit `FINAL(x)` as inline text.** Write to `/tmp/rlm/FINAL.txt` via your shell tool — inline text is bounded by output-token caps.
-5. **Do NOT skip the pickle load/dump boilerplate.** Missing it silently drops any mutations you made to `context` (each shell call is typically a fresh shell — state does not persist in-memory across cells in any mainstream coding harness).
-6. **Do NOT re-ingest context** if `/tmp/rlm/context.pkl` already exists for this session — check `meta.json` first.
+1. **Don't pass full long context inline to `llm_query`.** `llm_query` is for single short calls. For long documents, use `rlm_run`.
+2. **Don't call `rlm_run` with `<10K chars` of context.** The flat path is faster and equivalent. The tool will short-circuit but you waste a round trip.
+3. **Don't use `best_of_n` for deterministic tasks.** If the answer is uniquely determined (lookup, simple formula), one call suffices.
+4. **Don't use the same model for root and sub in `rlm_run`.** Defeats the cost win. Use Opus root + Haiku sub (default).
+5. **Don't ignore `cost_usd` in tool results.** A long RLM session can easily reach $0.50–$1. Surface costs to the user proactively.
+6. **Don't store secrets in `dispatch_subagent` tasks.** The task message goes to the subagent's LM in plaintext.
+
+---
+
+## Where the tools live
+
+The MCP server is `rlm-mcp-server` (installed by `pip install -e .` or `uv sync`). Configure your harness to launch it:
+
+**Claude Code / Claude Desktop** (`.mcp.json`):
+```json
+{
+  "mcpServers": {
+    "harness-rlm": {
+      "command": "rlm-mcp-server",
+      "env": { "ANTHROPIC_API_KEY": "sk-ant-..." }
+    }
+  }
+}
+```
+
+**Codex** (`config.toml`):
+```toml
+[mcp_servers.harness-rlm]
+command = "rlm-mcp-server"
+
+[mcp_servers.harness-rlm.env]
+ANTHROPIC_API_KEY = "sk-ant-..."
+```
+
+**Goose** (`~/.config/goose/config.yaml`):
+```yaml
+extensions:
+  harness-rlm:
+    type: stdio
+    command: rlm-mcp-server
+    envs:
+      ANTHROPIC_API_KEY: sk-ant-...
+```
+
+**OpenCode** (`~/.config/opencode/config.json`):
+```json
+{
+  "mcpServers": {
+    "harness-rlm": {
+      "command": "rlm-mcp-server",
+      "env": { "ANTHROPIC_API_KEY": "sk-ant-..." }
+    }
+  }
+}
+```
+
+Per-harness setup details: `adapters/<harness>/mcp-config.md`.
 
 ---
 
 ## Session storage contract
 
-All session artifacts live under `/tmp/rlm/` by default. Adapters may override the base directory, but the filenames are part of the contract:
+For tools that touch an RLM session, the following files are written/read under `/tmp/rlm/` (override via env in future versions):
 
-| File | Purpose | Written by |
+| File | Written by | Read by |
 |---|---|---|
-| `context.pkl` | Pickled context (the big thing) | Step 0 ingest + every cell's dump |
-| `meta.json` | `{chars, lines, sha256, preview}` | Step 0 ingest |
-| `state.json` | `{llm_calls, iter, ...}` — also gates adapter hooks (no-op outside an RLM session) | Step 0 + budget hook |
-| `trajectory.jsonl` | Append-only log: `{timestamp, tool, input, output_chars}` | Adapter post-tool hook |
-| `sub_calls.jsonl` | Audit trail of every `llm_query` call (prompt preview, cost, tokens) | `rlm` MCP server |
-| `FINAL.txt` | The root LM's final answer | Step 2 primitive D |
-| `cell.py` | Ephemeral Python cell source | Rewritten each cell |
+| `sub_calls.jsonl` | every LLM-touching tool | trace tooling, audit |
+| `trajectory.jsonl` | adapter post-tool hook (optional) | trace tooling |
+| `state.json` | adapter pre-call (optional) | budget guard |
+| `context.pkl` | (legacy) skill-driven RLM flavour | skill-driven RLM flavour |
 
-Adapters are responsible for installing pre/post tool hooks that read `state.json` for budget enforcement and append to `trajectory.jsonl` for audit. Hooks must be **no-ops outside an RLM session** — gate on the existence of `state.json`.
+The programmatic flavour (the MCP tools above) doesn't need `context.pkl` — `rlm_run` takes the document inline.
+
+---
+
+## References
+
+- RLM paper: [arXiv:2512.24601](https://arxiv.org/abs/2512.24601) (Zhang, Kraska, Khattab, Dec 2025)
+- GEPA: [arXiv:2507.19457](https://arxiv.org/abs/2507.19457) (Agrawal, Khattab et al., ICLR 2026)
+- Self-Consistency: [arXiv:2203.11171](https://arxiv.org/abs/2203.11171) (Wang, Wei et al., 2022)
+- Pi-mono harness: [badlogic/pi-mono](https://github.com/badlogic/pi-mono)
+- OpenAI Codex subagents: [developers.openai.com/codex/subagents](https://developers.openai.com/codex/subagents)
+- MCP spec: [modelcontextprotocol.io](https://modelcontextprotocol.io)
+- Open Agent Skills Standard: [agentskills.io](https://agentskills.io/specification)
+
+---
+
+## Quick selftest
+
+After installing, verify the server works:
+
+```bash
+$ rlm-mcp-server --list-tools | head -5
+[
+  {
+    "name": "llm_query",
+    ...
+
+$ rlm-mcp-server --selftest
+[selftest] response: RLM-SELFTEST-OK
+[selftest] tokens in/out: 14/8
+[selftest] cost_usd: 0.000054
+[selftest] tools registered: ['best_of_n', 'chain_of_thought', 'chunk_text', 'compress_text', 'dispatch_subagent', 'estimate_cost', 'list_subagents', 'llm_query', 'predict', 'rlm_run']
+[selftest] PASS
+```
+
+If the server starts cleanly and `--selftest` round-trips, all 10 tools are reachable.

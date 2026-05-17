@@ -29,12 +29,25 @@ The installer does NOT edit `~/.claude/settings.json` — it prints the exact JS
 
 ## Manual steps
 
-1. Register the `rlm` MCP server under `mcpServers` in `~/.claude/settings.json`:
+1. Register the `harness-rlm` MCP server under `mcpServers` in `~/.claude/settings.json`. The server exposes **10 tools** (`llm_query`, `rlm_run`, `predict`, `chain_of_thought`, `best_of_n`, `compress_text`, `chunk_text`, `dispatch_subagent`, `list_subagents`, `estimate_cost`). Full schema: [../../docs/MCP_TOOLS.md](../../docs/MCP_TOOLS.md).
 
    ```json
    {
      "mcpServers": {
-       "rlm": {
+       "harness-rlm": {
+         "command": "rlm-mcp-server",
+         "env": {"ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"}
+       }
+     }
+   }
+   ```
+
+   If `rlm-mcp-server` isn't on PATH for the Claude Code launcher, use the explicit-path form:
+
+   ```json
+   {
+     "mcpServers": {
+       "harness-rlm": {
          "command": "uv",
          "args": ["run", "--with", "anthropic", "--with", "mcp", "python",
                   "/path/to/harness-rlm/src/harness_rlm/mcp_server.py"],

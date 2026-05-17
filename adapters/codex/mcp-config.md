@@ -1,8 +1,13 @@
-# Registering the `rlm` MCP server in Codex CLI
+# Registering the `harness-rlm` MCP server in Codex CLI
 
-This adapter requires an `rlm` MCP server exposing the `llm_query` tool. The
-MCP server is shipped in the monorepo at
-`src/harness_rlm/mcp_server.py` — **this adapter does NOT bundle it.**
+The MCP server exposes **10 tools** — `llm_query`, `rlm_run`, `predict`,
+`chain_of_thought`, `best_of_n`, `compress_text`, `chunk_text`,
+`dispatch_subagent`, `list_subagents`, `estimate_cost`. Full schema:
+[../../docs/MCP_TOOLS.md](../../docs/MCP_TOOLS.md). Selection decision tree:
+[../../skill/SKILL.md](../../skill/SKILL.md).
+
+The MCP server is shipped in the monorepo at `src/harness_rlm/mcp_server.py`
+— **this adapter does NOT bundle it.**
 
 ## Why MCP matters
 
@@ -30,25 +35,29 @@ Source: https://developers.openai.com/codex/mcp (verified 2026-04-21).
 Open `~/.codex/config.toml` (or create it) and append:
 
 ```toml
-[mcp_servers.rlm]
-command = "uv"
-args = [
-    "run",
-    "--with", "anthropic",
-    "--with", "mcp",
-    "python",
-    "/ABSOLUTE/PATH/TO/harness-rlm/src/harness_rlm/mcp_server.py",
-]
-cwd = "/ABSOLUTE/PATH/TO/harness-rlm"
+[mcp_servers.harness-rlm]
+command = "rlm-mcp-server"
 startup_timeout_sec = 15
 tool_timeout_sec = 120
 supports_parallel_tool_calls = true
 enabled = true
 
-[mcp_servers.rlm.env]
+[mcp_servers.harness-rlm.env]
 # ANTHROPIC_API_KEY is required. Codex substitutes ${...} from the parent env.
 ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY}"
 PYTHONUNBUFFERED = "1"
+```
+
+`rlm-mcp-server` is installed by `pip install -e .` / `uv sync` (it's the
+project's console script). If your Codex CLI environment doesn't have it on
+PATH, use the absolute-path form:
+
+```toml
+[mcp_servers.harness-rlm]
+command = "uv"
+args = ["run", "--with", "anthropic", "--with", "mcp",
+        "python", "/ABSOLUTE/PATH/TO/harness-rlm/src/harness_rlm/mcp_server.py"]
+cwd = "/ABSOLUTE/PATH/TO/harness-rlm"
 ```
 
 Replace `/ABSOLUTE/PATH/TO/harness-rlm` with the actual clone path. The
@@ -82,7 +91,9 @@ You should see `rlm` in the list. Then confirm the tool is discovered:
 codex exec --sandbox workspace-write "List all tools available from the 'rlm' MCP server."
 ```
 
-Expected output includes `llm_query`.
+Expected output includes the 10 tools: `llm_query`, `rlm_run`, `predict`,
+`chain_of_thought`, `best_of_n`, `compress_text`, `chunk_text`,
+`dispatch_subagent`, `list_subagents`, `estimate_cost`.
 
 ## Selftest
 
