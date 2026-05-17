@@ -35,6 +35,12 @@ from harness_rlm.modules import (
 )
 from harness_rlm.agent_loop import AgentLoop, AgentLoopConfig, AgentLoopResult
 from harness_rlm.batch import BatchJobResult, BatchResult, spawn_agents_on_csv
+from harness_rlm.caching import (
+    cached_system_block,
+    cached_text_block,
+    cached_tools,
+    estimate_cache_savings,
+)
 from harness_rlm.claude_cli_lm import ClaudeCLILM
 from harness_rlm.gepa import GEPA, Candidate, GEPAResult, ScoreWithFeedback
 from harness_rlm.harness import RunResult, run
@@ -47,6 +53,7 @@ from harness_rlm.orchestrator import (
 )
 from harness_rlm.rlm import RLM, RLMConfig
 from harness_rlm.signatures import Field_, Signature, SignatureParseError
+from harness_rlm.structured import TypedPrediction, TypedPredict
 from harness_rlm.subagents import (
     SubagentSpec,
     discover,
@@ -138,4 +145,12 @@ __all__ = [
     "spawn_agents_on_csv",
     "BatchResult",
     "BatchJobResult",
+    # SOTA: prompt caching
+    "cached_text_block",
+    "cached_system_block",
+    "cached_tools",
+    "estimate_cache_savings",
+    # SOTA: Pydantic structured outputs
+    "TypedPredict",
+    "TypedPrediction",
 ]

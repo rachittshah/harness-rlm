@@ -74,6 +74,10 @@ class LMResult:
     cost_usd: float
     latency_s: float
     raw: Any = None  # Hold the SDK Message for debugging if callers want it.
+    thinking: str = ""  # extended-thinking content (Claude 4 thinking blocks)
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    stop_reason: str = ""
 
 
 class LM:
@@ -97,10 +101,16 @@ class LM:
         max_tokens: int = 1024,
         api_key: str | None = None,
         log_path: Path | None = SUB_CALLS_LOG,
+        *,
+        enable_caching: bool = False,
+        thinking_budget: int | None = None,
     ) -> None:
         self.model = model
         self.max_tokens = max_tokens
         self.log_path = log_path
+        # SOTA features.
+        self.enable_caching = enable_caching
+        self.thinking_budget = thinking_budget  # None = no thinking; int = budget tokens
         self._api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not self._api_key:
             raise RuntimeError(
@@ -114,6 +124,8 @@ class LM:
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.total_cost_usd = 0.0
+        self.total_cache_read_tokens = 0
+        self.total_cache_write_tokens = 0
 
     def __call__(
         self,
@@ -122,10 +134,23 @@ class LM:
         system: str | None = None,
         model: str | None = None,
         max_tokens: int | None = None,
+        enable_caching: bool | None = None,
+        thinking_budget: int | None = None,
     ) -> LMResult:
-        """One round-trip. Logs cost. Updates cumulative counters."""
+        """One round-trip. Logs cost. Updates cumulative counters.
+
+        Args (in addition to prompt/system/model/max_tokens):
+            enable_caching:   Per-call override for prompt caching. When True
+                              and `system` is set, the system block is sent as
+                              a cached content block (saves ~90% on hits).
+            thinking_budget:  Per-call override for extended-thinking budget
+                              (Claude 4 only). Token count for thinking; the
+                              thinking content lands in LMResult.thinking.
+        """
         used_model = model or self.model
         used_max = max_tokens or self.max_tokens
+        use_cache = enable_caching if enable_caching is not None else self.enable_caching
+        use_thinking = thinking_budget if thinking_budget is not None else self.thinking_budget
 
         kwargs: dict[str, Any] = {
             "model": used_model,
@@ -133,21 +158,41 @@ class LM:
             "messages": [{"role": "user", "content": prompt}],
         }
         if system is not None:
-            kwargs["system"] = system
+            if use_cache:
+                from harness_rlm.caching import cached_system_block
+
+                kwargs["system"] = cached_system_block(system)
+            else:
+                kwargs["system"] = system
+        if use_thinking is not None and use_thinking > 0:
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": int(use_thinking)}
+            # Thinking requires temperature=1 + max_tokens > budget.
+            kwargs["max_tokens"] = max(used_max, int(use_thinking) + 256)
 
         t0 = time.perf_counter()
         msg = self._client.messages.create(**kwargs)
         latency = time.perf_counter() - t0
 
+        # Pull text + thinking blocks separately.
         parts: list[str] = []
+        thinking_parts: list[str] = []
         for block in msg.content:
-            text = getattr(block, "text", None)
-            if text:
-                parts.append(text)
+            btype = getattr(block, "type", None)
+            if btype == "thinking":
+                tt = getattr(block, "thinking", None) or getattr(block, "text", None)
+                if tt:
+                    thinking_parts.append(tt)
+            else:
+                text = getattr(block, "text", None)
+                if text:
+                    parts.append(text)
         text = "".join(parts)
+        thinking_text = "".join(thinking_parts)
 
         in_tok = msg.usage.input_tokens
         out_tok = msg.usage.output_tokens
+        cache_read = getattr(msg.usage, "cache_read_input_tokens", 0) or 0
+        cache_write = getattr(msg.usage, "cache_creation_input_tokens", 0) or 0
         cost = compute_cost(used_model, in_tok, out_tok)
 
         with self._lock:
@@ -155,6 +200,8 @@ class LM:
             self.total_input_tokens += in_tok
             self.total_output_tokens += out_tok
             self.total_cost_usd += cost
+            self.total_cache_read_tokens += cache_read
+            self.total_cache_write_tokens += cache_write
 
         if self.log_path is not None:
             try:
@@ -180,6 +227,10 @@ class LM:
             cost_usd=cost,
             latency_s=latency,
             raw=msg,
+            thinking=thinking_text,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
+            stop_reason=getattr(msg, "stop_reason", "") or "",
         )
 
     # ---- Convenience: structured request via existing pydantic model -------
@@ -211,6 +262,8 @@ class LM:
                 "input_tokens": self.total_input_tokens,
                 "output_tokens": self.total_output_tokens,
                 "cost_usd": round(self.total_cost_usd, 6),
+                "cache_read_tokens": self.total_cache_read_tokens,
+                "cache_write_tokens": self.total_cache_write_tokens,
             }
 
 
