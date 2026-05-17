@@ -136,10 +136,7 @@ class TestBudgetEnforcement:
         pred = m(question="?", document=long_ctx)
         assert sub.calls == 2  # truncated
         assert root.calls == 1  # synth still ran
-        labels = [e["label"] for e in pred.trace.events]
-        assert "chunk_budget_truncated" in [
-            e.get("label") for e in pred.trace.events
-        ]
+        assert "chunk_budget_truncated" in [e.get("label") for e in pred.trace.events]
 
 
 class TestSignatureValidation:

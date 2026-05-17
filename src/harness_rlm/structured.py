@@ -146,8 +146,7 @@ class TypedPredict(Module, Generic[T]):
 
         # All retries exhausted.
         err = SignatureParseError(
-            f"TypedPredict failed after {self.max_retries + 1} attempts. "
-            f"Last error: {last_error}"
+            f"TypedPredict failed after {self.max_retries + 1} attempts. Last error: {last_error}"
         )
         err.add_note(f"trace: {trace.to_dict()}")
         raise err

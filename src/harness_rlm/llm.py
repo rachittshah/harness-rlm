@@ -51,9 +51,7 @@ def compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
         if model.startswith(prefix):
             rates = r
             break
-    return (
-        input_tokens * rates["input"] + output_tokens * rates["output"]
-    ) / 1_000_000.0
+    return (input_tokens * rates["input"] + output_tokens * rates["output"]) / 1_000_000.0
 
 
 def _now_iso() -> str:

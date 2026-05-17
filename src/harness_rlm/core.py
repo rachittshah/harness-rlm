@@ -270,9 +270,7 @@ def load_shared_skill() -> str:
         if p.is_file():
             return _strip_frontmatter(p.read_text(encoding="utf-8"))
     checked = "\n  ".join(str(p) for p in _candidate_skill_paths())
-    raise FileNotFoundError(
-        "Could not locate skill/SKILL.md. Searched:\n  " + checked
-    )
+    raise FileNotFoundError("Could not locate skill/SKILL.md. Searched:\n  " + checked)
 
 
 __all__ = [

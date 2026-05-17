@@ -62,9 +62,7 @@ class TestBuiltinTools:
     def test_edit_unique_match(self, tmp_path):
         path = tmp_path / "x.txt"
         path.write_text("hello world", encoding="utf-8")
-        r = EDIT_TOOL.execute(
-            {"path": str(path), "old_string": "hello", "new_string": "GREETINGS"}
-        )
+        r = EDIT_TOOL.execute({"path": str(path), "old_string": "hello", "new_string": "GREETINGS"})
         assert r.error is None
         assert path.read_text() == "GREETINGS world"
 

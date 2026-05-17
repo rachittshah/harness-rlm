@@ -136,7 +136,9 @@ class AgentLoop:
                     messages=send_messages,
                     tools=tool_schemas,
                 )
-                cost_total += _approx_cost(cfg.model, msg.usage.input_tokens, msg.usage.output_tokens)
+                cost_total += _approx_cost(
+                    cfg.model, msg.usage.input_tokens, msg.usage.output_tokens
+                )
 
                 # Capture the assistant message verbatim for the next turn.
                 content_blocks: list[dict] = []
@@ -262,12 +264,8 @@ class AgentLoop:
             for t in self.tools.values()
         ]
 
-    def _execute_tools(
-        self, tool_calls: list[dict], events: list[dict]
-    ) -> list[ToolResult]:
-        any_parallel = any(
-            self.tools[tc["name"]].execution_mode == "parallel" for tc in tool_calls
-        )
+    def _execute_tools(self, tool_calls: list[dict], events: list[dict]) -> list[ToolResult]:
+        any_parallel = any(self.tools[tc["name"]].execution_mode == "parallel" for tc in tool_calls)
 
         def call_one(tc: dict) -> ToolResult:
             tool = self.tools.get(tc["name"])
@@ -294,9 +292,7 @@ class AgentLoop:
             return result
 
         if any_parallel and len(tool_calls) > 1:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=min(8, len(tool_calls))
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(tool_calls))) as ex:
                 return list(ex.map(call_one, tool_calls))
         return [call_one(tc) for tc in tool_calls]
 

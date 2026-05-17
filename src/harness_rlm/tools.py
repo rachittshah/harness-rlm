@@ -73,9 +73,7 @@ class AgentTool:
 
     def __post_init__(self) -> None:
         if not self.name.replace("_", "").isalnum():
-            raise ValueError(
-                f"Tool name must be snake_case alphanumeric (got {self.name!r})"
-            )
+            raise ValueError(f"Tool name must be snake_case alphanumeric (got {self.name!r})")
         if self.label is None:
             self.label = self.name
 
@@ -117,9 +115,7 @@ def _edit_tool(args: dict) -> ToolResult:
     old, new = args["old_string"], args["new_string"]
     occurrences = text.count(old)
     if occurrences == 0:
-        return ToolResult.fail(
-            f"old_string not found in {path}. Tool calls must be exact."
-        )
+        return ToolResult.fail(f"old_string not found in {path}. Tool calls must be exact.")
     if occurrences > 1 and not args.get("replace_all"):
         return ToolResult.fail(
             f"old_string matches {occurrences} times — pass replace_all=true or expand context."
@@ -262,12 +258,8 @@ def from_function(
     sig = inspect.signature(fn)
     derived_params = parameters or {
         "type": "object",
-        "properties": {
-            p: {"type": "string"} for p in sig.parameters.keys()
-        },
-        "required": [
-            p for p, v in sig.parameters.items() if v.default is inspect.Parameter.empty
-        ],
+        "properties": {p: {"type": "string"} for p in sig.parameters.keys()},
+        "required": [p for p, v in sig.parameters.items() if v.default is inspect.Parameter.empty],
     }
 
     def _execute(args: dict[str, Any]) -> ToolResult:

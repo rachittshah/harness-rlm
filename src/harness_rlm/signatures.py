@@ -36,9 +36,7 @@ class Field_:
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.replace("_", "").isalnum():
-            raise ValueError(
-                f"Field name must be alphanumeric/underscore (got {self.name!r})"
-            )
+            raise ValueError(f"Field name must be alphanumeric/underscore (got {self.name!r})")
 
 
 @dataclass
@@ -78,9 +76,7 @@ class Signature:
         # Accept either a shorthand string OR explicit inputs/outputs, not both.
         if shorthand is not None:
             if inputs is not None or outputs is not None:
-                raise ValueError(
-                    "Pass either a shorthand string OR inputs/outputs, not both."
-                )
+                raise ValueError("Pass either a shorthand string OR inputs/outputs, not both.")
             parsed_in, parsed_out = _parse_shorthand(shorthand)
             self.inputs = parsed_in
             self.outputs = parsed_out
@@ -126,8 +122,7 @@ class Signature:
         missing = [f.name for f in self.inputs if f.name not in values]
         if missing:
             raise KeyError(
-                f"Signature missing required inputs: {missing}. "
-                f"Got {sorted(values.keys())}"
+                f"Signature missing required inputs: {missing}. Got {sorted(values.keys())}"
             )
 
         parts: list[str] = []
@@ -201,9 +196,7 @@ class SignatureParseError(ValueError):
 def _parse_shorthand(s: str) -> tuple[list[Field_], list[Field_]]:
     m = _SHORTHAND_RE.match(s)
     if not m:
-        raise ValueError(
-            f"Shorthand must look like 'a, b -> c' (got {s!r})"
-        )
+        raise ValueError(f"Shorthand must look like 'a, b -> c' (got {s!r})")
     lhs = [x.strip() for x in m.group(1).split(",") if x.strip()]
     rhs = [x.strip() for x in m.group(2).split(",") if x.strip()]
     if not rhs:
@@ -223,9 +216,7 @@ def _coerce_fields(
         elif isinstance(item, str):
             out.append(Field_(name=item))
         else:
-            raise TypeError(
-                f"Field spec must be str | dict | Field_, got {type(item).__name__}"
-            )
+            raise TypeError(f"Field spec must be str | dict | Field_, got {type(item).__name__}")
     return out
 
 

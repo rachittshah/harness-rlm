@@ -74,9 +74,7 @@ def read_trajectory(session_dir: Path = DEFAULT_SESSION_DIR) -> list[dict[str, A
                 entries.append(json.loads(raw))
             except json.JSONDecodeError as e:
                 # Surface bad lines loudly — silent swallow would hide corruption.
-                raise ValueError(
-                    f"Corrupt trajectory line {line_no} in {traj_path}: {e}"
-                ) from e
+                raise ValueError(f"Corrupt trajectory line {line_no} in {traj_path}: {e}") from e
     return entries
 
 

@@ -116,9 +116,7 @@ class TestBasicLoop:
         )
         loop = AgentLoop([infinite_tool, FINISH_TOOL], AgentLoopConfig(max_turns=3))
         # Script enough tool_calls to exceed max_turns.
-        scripted = [
-            _tool_call("ping", {}, call_id=f"c{i}") for i in range(10)
-        ]
+        scripted = [_tool_call("ping", {}, call_id=f"c{i}") for i in range(10)]
         _patch_client(monkeypatch, loop, scripted)
         result = loop.run("loop forever")
         assert result.turns >= 3  # capped
@@ -190,7 +188,11 @@ class TestValidation:
             AgentLoop([])
 
     def test_duplicate_tool_names_raise(self):
-        t1 = AgentTool(name="x", description="x", parameters={}, execute=lambda a: ToolResult.text(""))
-        t2 = AgentTool(name="x", description="y", parameters={}, execute=lambda a: ToolResult.text(""))
+        t1 = AgentTool(
+            name="x", description="x", parameters={}, execute=lambda a: ToolResult.text("")
+        )
+        t2 = AgentTool(
+            name="x", description="y", parameters={}, execute=lambda a: ToolResult.text("")
+        )
         with pytest.raises(ValueError, match="unique"):
             AgentLoop([t1, t2])

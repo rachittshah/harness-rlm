@@ -74,8 +74,18 @@ class TestCaching:
 
     def test_cached_tools_idempotent(self):
         tools = [
-            {"name": "a", "description": "a", "input_schema": {}, "cache_control": {"type": "ephemeral"}},
-            {"name": "b", "description": "b", "input_schema": {}, "cache_control": {"type": "ephemeral"}},
+            {
+                "name": "a",
+                "description": "a",
+                "input_schema": {},
+                "cache_control": {"type": "ephemeral"},
+            },
+            {
+                "name": "b",
+                "description": "b",
+                "input_schema": {},
+                "cache_control": {"type": "ephemeral"},
+            },
         ]
         out = cached_tools(tools)
         assert "cache_control" not in out[0]
@@ -102,9 +112,7 @@ class AnswerSchema(BaseModel):
 
 class TestTypedPredict:
     def test_happy_path(self):
-        lm = _StubLM(
-            canned=['{"result": 4, "explanation": "two plus two"}']
-        )
+        lm = _StubLM(canned=['{"result": 4, "explanation": "two plus two"}'])
         m = TypedPredict("question -> answer", output_model=AnswerSchema, lm=lm)  # type: ignore[arg-type]
         pred = m(question="2+2?")
         assert pred.value.result == 4
@@ -113,9 +121,7 @@ class TestTypedPredict:
         assert pred.fields["result"] == 4
 
     def test_json_inside_code_fence(self):
-        lm = _StubLM(
-            canned=['Here you go:\n```json\n{"result": 5, "explanation": "five"}\n```']
-        )
+        lm = _StubLM(canned=['Here you go:\n```json\n{"result": 5, "explanation": "five"}\n```'])
         m = TypedPredict("q -> a", output_model=AnswerSchema, lm=lm)  # type: ignore[arg-type]
         pred = m(q="x")
         assert pred.value.result == 5

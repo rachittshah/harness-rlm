@@ -91,9 +91,7 @@ class MCPToolset:
         self._thread.start()
         # Wait up to 30s for the MCP server to come up.
         if not self._ready.wait(timeout=30):
-            raise RuntimeError(
-                f"MCP server {self.command!r} did not initialise within 30s."
-            )
+            raise RuntimeError(f"MCP server {self.command!r} did not initialise within 30s.")
 
     async def _init_session(self) -> None:
         from contextlib import AsyncExitStack
@@ -108,9 +106,7 @@ class MCPToolset:
         )
         self._exit_stack = AsyncExitStack()
         read, write = await self._exit_stack.enter_async_context(stdio_client(params))
-        self._session = await self._exit_stack.enter_async_context(
-            ClientSession(read, write)
-        )
+        self._session = await self._exit_stack.enter_async_context(ClientSession(read, write))
         await self._session.initialize()
         # Cache the tool list once at startup; MCP servers can refresh it but
         # for our wrapper we treat the initial set as canonical.
@@ -147,9 +143,7 @@ class MCPToolset:
     def tools(self) -> list[AgentTool]:
         """Return the MCP server's tools as AgentTool instances."""
         if not self._tools_cached:
-            raise RuntimeError(
-                "MCPToolset not started — call .start() or use as context manager."
-            )
+            raise RuntimeError("MCPToolset not started — call .start() or use as context manager.")
         return [self._wrap(spec) for spec in self._tools_cached]
 
     # ---- internal --------------------------------------------------------
@@ -160,9 +154,7 @@ class MCPToolset:
 
         def execute(args: dict[str, Any]) -> ToolResult:
             assert self._loop is not None
-            fut = asyncio.run_coroutine_threadsafe(
-                self._call_tool(tool_name, args), self._loop
-            )
+            fut = asyncio.run_coroutine_threadsafe(self._call_tool(tool_name, args), self._loop)
             try:
                 content_blocks, structured = fut.result(timeout=120)
             except Exception as e:  # noqa: BLE001
@@ -202,9 +194,7 @@ class MCPToolset:
             execute=execute,
         )
 
-    async def _call_tool(
-        self, tool_name: str, args: dict[str, Any]
-    ) -> tuple[list[Any], Any]:
+    async def _call_tool(self, tool_name: str, args: dict[str, Any]) -> tuple[list[Any], Any]:
         assert self._session is not None
         result = await self._session.call_tool(tool_name, args)
         # MCP call_tool returns a CallToolResult with `content` list.

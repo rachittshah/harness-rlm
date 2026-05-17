@@ -134,7 +134,6 @@ class TestChunkContext:
         """Every char in input must appear in at least one chunk."""
         text = "".join(chr(ord("a") + (i % 26)) for i in range(1000))
         chunks = chunk_context(text, chunk_size=100, overlap=10)
-        concat_with_overlap = ""
         offset = 0
         for c in chunks:
             # Each chunk should start at the expected offset (step-based).

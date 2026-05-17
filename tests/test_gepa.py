@@ -85,8 +85,12 @@ class TestCompile:
                 self.calls += 1
                 txt = "answer: ok" if "GOOD" in prompt else "answer: bad"
                 return LMResult(
-                    text=txt, model="x", input_tokens=10, output_tokens=2,
-                    cost_usd=0.0001, latency_s=0.01,
+                    text=txt,
+                    model="x",
+                    input_tokens=10,
+                    output_tokens=2,
+                    cost_usd=0.0001,
+                    latency_s=0.01,
                 )
 
         student_lm = _ConditionalLM()

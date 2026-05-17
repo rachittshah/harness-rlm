@@ -126,7 +126,10 @@ class BestOfN(Module):
         # Preserve per-sample traces if requested.
         if self.keep_all:
             combined.events.append(
-                {"label": "samples", "traces": [s.trace.to_dict() if s.trace else None for s in samples]}
+                {
+                    "label": "samples",
+                    "traces": [s.trace.to_dict() if s.trace else None for s in samples],
+                }
             )
 
         return Prediction(fields=dict(winner.fields), trace=combined)

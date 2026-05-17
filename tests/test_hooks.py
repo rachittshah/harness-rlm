@@ -16,9 +16,7 @@ from pathlib import Path
 
 import pytest
 
-HOOKS_DIR = (
-    Path(__file__).resolve().parent.parent / "adapters" / "claude_code" / "hooks"
-)
+HOOKS_DIR = Path(__file__).resolve().parent.parent / "adapters" / "claude_code" / "hooks"
 BUDGET_GUARD_SRC = HOOKS_DIR / "budget_guard.py"
 TRAJECTORY_LOG_SRC = HOOKS_DIR / "trajectory_log.py"
 

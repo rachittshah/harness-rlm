@@ -102,9 +102,7 @@ class ClaudeCLILM:
         latency = time.perf_counter() - t0
 
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"claude -p exited {proc.returncode}: {proc.stderr.strip()[:500]}"
-            )
+            raise RuntimeError(f"claude -p exited {proc.returncode}: {proc.stderr.strip()[:500]}")
 
         text = proc.stdout.strip()
         # CLI doesn't surface token counts — approximate by chars (~4 chars/token).

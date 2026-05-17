@@ -40,9 +40,7 @@ class Prediction:
         # Only called when normal attribute lookup fails.
         if name in self.fields:
             return self.fields[name]
-        raise AttributeError(
-            f"Prediction has no field {name!r}. Available: {sorted(self.fields)}"
-        )
+        raise AttributeError(f"Prediction has no field {name!r}. Available: {sorted(self.fields)}")
 
     def __getitem__(self, key: str) -> Any:
         return self.fields[key]
@@ -129,9 +127,7 @@ class Module:
         lm: LM | None = None,
         name: str | None = None,
     ) -> None:
-        self.signature = (
-            signature if isinstance(signature, Signature) else Signature(signature)
-        )
+        self.signature = signature if isinstance(signature, Signature) else Signature(signature)
         self.lm = lm
         self.name = name or type(self).__name__
 

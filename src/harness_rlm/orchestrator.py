@@ -103,9 +103,7 @@ class Orchestrator:
                         "input_keys": sorted(inputs.keys()),
                         "output_keys": sorted(pred.fields.keys()),
                         "calls": pred.trace.calls if pred.trace else 0,
-                        "cost_usd": (
-                            round(pred.trace.cost_usd, 6) if pred.trace else 0.0
-                        ),
+                        "cost_usd": (round(pred.trace.cost_usd, 6) if pred.trace else 0.0),
                     }
                 )
                 if session_store is not None:
@@ -141,9 +139,7 @@ class Orchestrator:
                         }
                     )
                 if not self.continue_on_error:
-                    return OrchestratorResult(
-                        state=state, trace=combined, steps=step_logs
-                    )
+                    return OrchestratorResult(state=state, trace=combined, steps=step_logs)
                 state[step.name] = {"error": str(e)}
 
         return OrchestratorResult(state=state, trace=combined, steps=step_logs)
@@ -190,9 +186,7 @@ class SessionStore:
                 try:
                     entries.append(json.loads(raw))
                 except json.JSONDecodeError as e:
-                    raise ValueError(
-                        f"Corrupt event line {line_no} in {self.path}: {e}"
-                    ) from e
+                    raise ValueError(f"Corrupt event line {line_no} in {self.path}: {e}") from e
         return entries
 
     def clear(self) -> None:

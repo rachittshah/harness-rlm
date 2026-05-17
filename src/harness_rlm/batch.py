@@ -108,8 +108,7 @@ def spawn_agents_on_csv(
         raise ValueError(f"input CSV is empty: {csv_path}")
     if item_id_column not in rows[0]:
         raise ValueError(
-            f"item_id_column {item_id_column!r} not in CSV header. "
-            f"Available: {sorted(rows[0])}"
+            f"item_id_column {item_id_column!r} not in CSV header. Available: {sorted(rows[0])}"
         )
 
     job = job_id or f"batch-{int(time.time())}"

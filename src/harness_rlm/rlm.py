@@ -119,9 +119,7 @@ class RLM(Module):
         # The single declared output field — used for short-circuit + synth.
         outs = self.signature.output_names()
         # Pick the first non-reasoning field as "the" answer slot.
-        self._answer_field = next(
-            (n for n in outs if n.lower() != "reasoning"), outs[0]
-        )
+        self._answer_field = next((n for n in outs if n.lower() != "reasoning"), outs[0])
 
     # ---- runtime ----------------------------------------------------------
     def _root(self) -> LM:
@@ -175,10 +173,7 @@ class RLM(Module):
         the full chunk. Parents synthesise their children's partials.
         """
         # Leaf if small enough OR we've hit max depth.
-        if (
-            len(ctx) <= self.config.flat_char_threshold
-            or depth >= self.config.tree_max_depth
-        ):
+        if len(ctx) <= self.config.flat_char_threshold or depth >= self.config.tree_max_depth:
             try:
                 guard.check_call()
             except BudgetExceededError:
@@ -217,9 +212,7 @@ class RLM(Module):
         else:
             for child in children:
                 partials.append(
-                    self._tree_decompose(
-                        child, other_inputs, trace, guard, depth=depth + 1
-                    )
+                    self._tree_decompose(child, other_inputs, trace, guard, depth=depth + 1)
                 )
 
         # Synth at this level — feed sibling partials to the root LM.

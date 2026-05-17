@@ -89,15 +89,11 @@ def trace_to_mermaid(trace: Trace, *, title: str | None = None) -> str:
     for i, evt in enumerate(trace.events, start=1):
         node_id = f"{safe_module}_e{i}"
         label = _node_label(evt)
-        lines.append(f"    {node_id}[\"{label}\"]")
+        lines.append(f'    {node_id}["{label}"]')
         lines.append(f"    {prev} --> {node_id}")
         prev = node_id
 
-    footer = (
-        f"calls={trace.calls}  "
-        f"cost=${trace.cost_usd:.4f}  "
-        f"latency={trace.latency_s:.2f}s"
-    )
+    footer = f"calls={trace.calls}  cost=${trace.cost_usd:.4f}  latency={trace.latency_s:.2f}s"
     lines.append(f'    end_node(["■ done<br/>{footer}"])')
     lines.append(f"    {prev} --> end_node")
     lines.append("```")

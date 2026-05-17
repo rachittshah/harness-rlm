@@ -225,9 +225,7 @@ class GEPA:
         # Subsample feedback so the prompt doesn't balloon.
         n = min(self.minibatch_size, len(parent_feedback))
         idxs = self._rng.sample(range(len(parent_feedback)), n)
-        feedback_block = "\n".join(
-            f"[ex{i}] score={parent_feedback[i] or '(empty)'}" for i in idxs
-        )
+        feedback_block = "\n".join(f"[ex{i}] score={parent_feedback[i] or '(empty)'}" for i in idxs)
 
         prompt = (
             "You are tuning a single instruction string used by an LLM module.\n"
