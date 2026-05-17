@@ -25,6 +25,7 @@ dev = [
 
 [project.scripts]
 rlm-mcp-server = "harness_rlm.mcp_server:main"
+harness-rlm = "harness_rlm.harness:main"
 
 [build-system]
 requires = ["hatchling"]

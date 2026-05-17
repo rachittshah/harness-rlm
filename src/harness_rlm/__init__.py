@@ -34,6 +34,7 @@ from harness_rlm.modules import (
     Trace,
 )
 from harness_rlm.gepa import GEPA, Candidate, GEPAResult, ScoreWithFeedback
+from harness_rlm.harness import RunResult, run
 from harness_rlm.rlm import RLM, RLMConfig
 from harness_rlm.signatures import Field_, Signature, SignatureParseError
 
@@ -75,4 +76,7 @@ __all__ = [
     "GEPAResult",
     "Candidate",
     "ScoreWithFeedback",
+    # top-level harness
+    "run",
+    "RunResult",
 ]
