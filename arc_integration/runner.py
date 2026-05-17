@@ -288,6 +288,18 @@ def main() -> int:
         help="Print plan + exit without invoking claude.",
     )
     p.add_argument("--task-ids", default="", help="Comma-separated explicit task IDs to run.")
+    p.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        help="Concurrent tasks (each task still runs its k attempts sequentially). Use 8-20 with claude -p Enterprise.",
+    )
+    p.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=5,
+        help="Flush partial results to --out every N tasks (lets you tail progress + survive crashes).",
+    )
     args = p.parse_args()
 
     if not args.dataset.is_dir():
@@ -346,37 +358,82 @@ def main() -> int:
     predictions: dict[str, dict[str, Grid | None]] = {}
 
     t_start = time.monotonic()
-    try:
-        for i, task_path in enumerate(tasks, start=1):
-            print(f"[arc] [{i}/{len(tasks)}] {task_path.stem}", flush=True)
-            try:
-                task_result = run_one_task(
-                    task_path,
-                    k=args.k,
-                    model=args.model,
-                    effort=args.effort,
-                    mcp_config=mcp_config_path,
-                    timeout_s=args.timeout,
-                )
-            except Exception as e:  # noqa: BLE001
-                print(f"[arc]   crashed: {type(e).__name__}: {e}")
-                traceback.print_exc()
-                results.append(
-                    {
-                        "task_id": task_path.stem,
-                        "passed_at_k": False,
-                        "error": f"{type(e).__name__}: {e}",
-                    }
-                )
-                continue
-            results.append(task_result)
-            gold[task_path.stem] = load_task(task_path)["test"][0]["output"]
-            predictions[task_path.stem] = task_result["prediction"]
-            print(
-                f"[arc]   passed_at_k={task_result['passed_at_k']} "
-                f"parses={[a['parse_ok'] for a in task_result['attempts']]}",
-                flush=True,
+
+    def _flush_partial() -> None:
+        """Write partial results so a crash or kill doesn't lose data."""
+        partial = {
+            "config": cfg,
+            "elapsed_s": round(time.monotonic() - t_start, 2),
+            "scoring": score_run(predictions, gold, k=args.k),
+            "results": results,
+            "partial": True,
+            "completed": len(results),
+            "total_planned": len(tasks),
+        }
+        out_path.write_text(json.dumps(partial, indent=2, default=str))
+
+    def _process_one(idx: int, task_path: Path) -> dict[str, Any]:
+        """Inner driver — runnable in a thread."""
+        try:
+            return run_one_task(
+                task_path,
+                k=args.k,
+                model=args.model,
+                effort=args.effort,
+                mcp_config=mcp_config_path,
+                timeout_s=args.timeout,
             )
+        except Exception as e:  # noqa: BLE001
+            print(f"[arc] [{idx}] {task_path.stem} CRASHED: {type(e).__name__}: {e}", flush=True)
+            traceback.print_exc()
+            return {
+                "task_id": task_path.stem,
+                "passed_at_k": False,
+                "error": f"{type(e).__name__}: {e}",
+            }
+
+    try:
+        if args.parallel <= 1:
+            for i, task_path in enumerate(tasks, start=1):
+                print(f"[arc] [{i}/{len(tasks)}] {task_path.stem}", flush=True)
+                task_result = _process_one(i, task_path)
+                results.append(task_result)
+                if "prediction" in task_result:
+                    gold[task_path.stem] = load_task(task_path)["test"][0]["output"]
+                    predictions[task_path.stem] = task_result["prediction"]
+                print(
+                    f"[arc]   passed_at_k={task_result.get('passed_at_k')} "
+                    f"parses={[a.get('parse_ok') for a in task_result.get('attempts', [])]}",
+                    flush=True,
+                )
+                if i % args.checkpoint_every == 0:
+                    _flush_partial()
+        else:
+            import concurrent.futures as _cf
+
+            print(f"[arc] parallel={args.parallel}", flush=True)
+            with _cf.ThreadPoolExecutor(max_workers=args.parallel) as ex:
+                futures = {
+                    ex.submit(_process_one, i, tp): (i, tp)
+                    for i, tp in enumerate(tasks, start=1)
+                }
+                done_count = 0
+                for fut in _cf.as_completed(futures):
+                    i, task_path = futures[fut]
+                    task_result = fut.result()
+                    results.append(task_result)
+                    if "prediction" in task_result:
+                        gold[task_path.stem] = load_task(task_path)["test"][0]["output"]
+                        predictions[task_path.stem] = task_result["prediction"]
+                    done_count += 1
+                    print(
+                        f"[arc] [{done_count}/{len(tasks)}] {task_path.stem} "
+                        f"passed_at_k={task_result.get('passed_at_k')} "
+                        f"parses={[a.get('parse_ok') for a in task_result.get('attempts', [])]}",
+                        flush=True,
+                    )
+                    if done_count % args.checkpoint_every == 0:
+                        _flush_partial()
     finally:
         elapsed_s = round(time.monotonic() - t_start, 2)
         scoring = score_run(predictions, gold, k=args.k)
