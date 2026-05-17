@@ -30,7 +30,7 @@ from harness_rlm.llm import LM, get_lm
 from harness_rlm.modules import Module, Prediction, Trace
 from harness_rlm.signatures import Signature
 
-Strategy = Literal["map_reduce", "filter_then_query", "auto"]
+Strategy = Literal["map_reduce", "filter_then_query", "tree", "auto"]
 
 # Threshold below which we skip recursion entirely — flat call is faster
 # *and* equally accurate when the context fits in one prompt.
@@ -58,6 +58,10 @@ class RLMConfig:
     chunk_size: int = 20_000
     overlap: int = 200
     max_parallel: int = 8
+    # Tree-recursive strategy: branching factor at each level.
+    tree_branching: int = 4
+    # Max recursion depth before forcing a leaf-level synthesis.
+    tree_max_depth: int = 4
     # Budget envelope — also enforced by BudgetGuard wrapped around the loop.
     max_iterations: int = 20
     max_llm_calls: int = 50
@@ -144,11 +148,103 @@ class RLM(Module):
             return self._flat_call(inputs, trace, guard)
 
         # Slow path: decompose, dispatch, synth.
-        chunks = self._make_chunks(ctx)
-        partials = self._fan_out(chunks, other_inputs, trace, guard)
-        answer = self._synthesize(partials, other_inputs, trace, guard)
+        if self.config.strategy == "tree":
+            answer = self._tree_decompose(ctx, other_inputs, trace, guard, depth=0)
+        else:
+            chunks = self._make_chunks(ctx)
+            partials = self._fan_out(chunks, other_inputs, trace, guard)
+            answer = self._synthesize(partials, other_inputs, trace, guard)
 
         return Prediction(fields={self._answer_field: answer}, trace=trace)
+
+    # ---- tree-recursive decomposition ------------------------------------
+    def _tree_decompose(
+        self,
+        ctx: str,
+        other_inputs: dict[str, Any],
+        trace: Trace,
+        guard: BudgetGuard,
+        *,
+        depth: int,
+    ) -> str:
+        """Recursively split context into a tree; sub-LM at leaves; synth on the way up.
+
+        Branching factor: config.tree_branching. Max depth: config.tree_max_depth.
+        At each level, the context is split into roughly equal-size children. A
+        child that fits in `flat_char_threshold` becomes a leaf — sub-LM gets
+        the full chunk. Parents synthesise their children's partials.
+        """
+        # Leaf if small enough OR we've hit max depth.
+        if (
+            len(ctx) <= self.config.flat_char_threshold
+            or depth >= self.config.tree_max_depth
+        ):
+            try:
+                guard.check_call()
+            except BudgetExceededError:
+                return "BUDGET_EXHAUSTED"
+            prompt = self._render_sub_prompt(ctx, other_inputs)
+            result = self._sub()(prompt, max_tokens=self.config.sub_max_tokens)
+            trace.record(result, label=f"tree_leaf(d={depth})")
+            guard.increment_call()
+            return result.text.strip()
+
+        # Split into N children.
+        n = max(2, self.config.tree_branching)
+        step = max(1, len(ctx) // n)
+        children = [ctx[i : i + step] for i in range(0, len(ctx), step)][:n]
+
+        # Recurse — parallel at this level if more than one child.
+        partials: list[str] = []
+        if self.config.max_parallel > 1 and len(children) > 1:
+            import concurrent.futures as _cf
+
+            with _cf.ThreadPoolExecutor(
+                max_workers=min(self.config.max_parallel, len(children))
+            ) as ex:
+                futures = [
+                    ex.submit(
+                        self._tree_decompose,
+                        child,
+                        other_inputs,
+                        trace,
+                        guard,
+                        depth=depth + 1,
+                    )
+                    for child in children
+                ]
+                partials = [f.result() for f in futures]
+        else:
+            for child in children:
+                partials.append(
+                    self._tree_decompose(
+                        child, other_inputs, trace, guard, depth=depth + 1
+                    )
+                )
+
+        # Synth at this level — feed sibling partials to the root LM.
+        try:
+            guard.check_call()
+        except BudgetExceededError:
+            return next((p for p in partials if NOT_FOUND not in p), partials[0])
+
+        lines = [
+            self.config.synth_instruction,
+            f"(tree level {depth})",
+            "---",
+        ]
+        for k, v in other_inputs.items():
+            lines.append(f"{k}: {v}")
+        lines.append("---")
+        for i, p in enumerate(partials):
+            lines.append(f"[{i}] {p}")
+        lines.append("---")
+        lines.append("Synthesised answer:")
+        prompt = "\n".join(lines)
+        result = self._root()(prompt, max_tokens=self.config.synth_max_tokens)
+        trace.record(result, label=f"tree_synth(d={depth})")
+        guard.increment_call()
+        return result.text.strip()
 
     # ---- chunk + filter ---------------------------------------------------
     def _make_chunks(self, ctx: str) -> list[str]:

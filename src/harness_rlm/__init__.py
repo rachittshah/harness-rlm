@@ -46,6 +46,7 @@ from harness_rlm.caching import (
 from harness_rlm.claude_cli_lm import ClaudeCLILM
 from harness_rlm.gepa import GEPA, Candidate, GEPAResult, ScoreWithFeedback
 from harness_rlm.harness import RunResult, run
+from harness_rlm.mcp_client import MCPToolset
 from harness_rlm.orchestrator import (
     Orchestrator,
     OrchestratorResult,
@@ -171,4 +172,6 @@ __all__ = [
     # SOTA: trace visualization
     "format_trace",
     "trace_to_mermaid",
+    # SOTA: MCP-as-client
+    "MCPToolset",
 ]
