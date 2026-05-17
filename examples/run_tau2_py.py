@@ -62,6 +62,17 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--max-steps", type=int, default=30, help="Max steps per rollout.")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
+        "--effort",
+        default=None,
+        choices=["low", "medium", "high", "xhigh", "max"],
+        help="Reasoning effort for claude -p (claude-headless agent only).",
+    )
+    p.add_argument(
+        "--mcp-config",
+        default=None,
+        help="Path to MCP config JSON for claude -p (e.g. results/mcp_config_harness_rlm.json).",
+    )
+    p.add_argument(
         "--out",
         default=str(REPO_ROOT / "results" / "tau2_run.json"),
         help="Where to write the JSON result summary.",
@@ -82,9 +93,7 @@ def _result_summary(result: Any) -> dict[str, Any]:
     """Extract a JSON-safe summary from a tau2 SimulationRun."""
     reward_info = getattr(result, "reward_info", None)
     messages = getattr(result, "messages", []) or []
-    task_id = getattr(result, "task_id", None) or getattr(
-        getattr(result, "task", None), "id", None
-    )
+    task_id = getattr(result, "task_id", None) or getattr(getattr(result, "task", None), "id", None)
 
     summary: dict[str, Any] = {
         "task_id": task_id,
@@ -158,10 +167,19 @@ def main() -> int:
         print(f"[tau2-integration] ERROR: no tasks found for domain {args.domain!r}")
         return 2
 
+    # Wire effort + mcp-config through to the agent's `llm_args`.
+    agent_llm_args: dict[str, Any] = {}
+    if args.effort:
+        agent_llm_args["effort"] = args.effort
+    if args.mcp_config:
+        # Make path absolute so claude -p resolves it regardless of cwd.
+        agent_llm_args["mcp_config_path"] = str(Path(args.mcp_config).resolve())
+
     config_kwargs: dict[str, Any] = {
         "domain": args.domain,
         "agent": args.agent,
         "llm_agent": args.agent_llm or "",
+        "llm_args_agent": agent_llm_args,
         "llm_user": args.user_llm,
         "num_trials": args.num_trials,
         "max_steps": args.max_steps,
@@ -188,9 +206,7 @@ def main() -> int:
                     f"[tau2-integration] -> task={task.id} trial={trial + 1}/{args.num_trials}",
                     flush=True,
                 )
-                orchestrator = build_text_orchestrator(
-                    config, task, seed=args.seed + trial
-                )
+                orchestrator = build_text_orchestrator(config, task, seed=args.seed + trial)
                 try:
                     result = run_simulation(orchestrator)
                 except Exception as e:  # noqa: BLE001

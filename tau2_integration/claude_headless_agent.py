@@ -103,11 +103,15 @@ class ClaudeHeadlessAgent(HalfDuplexAgent[ClaudeHeadlessAgentState]):
         claude_bin: str = "claude",
         timeout: int = 120,
         model: Optional[str] = None,
+        effort: Optional[str] = None,
+        mcp_config_path: Optional[str] = None,
     ) -> None:
         super().__init__(tools=tools, domain_policy=domain_policy)
         self.claude_bin = claude_bin
         self.timeout = timeout
         self.model = model
+        self.effort = effort
+        self.mcp_config_path = mcp_config_path
 
     # -- state init ---------------------------------------------------------
 
@@ -259,14 +263,11 @@ class ClaudeHeadlessAgent(HalfDuplexAgent[ClaudeHeadlessAgentState]):
                 lines.append(f"[{role}] {content}")
         lines.append("")
         lines.append(
-            "Respond with the next assistant message now. Follow the output "
-            "contract exactly."
+            "Respond with the next assistant message now. Follow the output contract exactly."
         )
         return "\n".join(lines)
 
-    def _invoke_claude(
-        self, prompt: str, session_id: str
-    ) -> tuple[str, int, Optional[str]]:
+    def _invoke_claude(self, prompt: str, session_id: str) -> tuple[str, int, Optional[str]]:
         """Call ``claude -p`` and return (raw_text, elapsed_ms, error_or_None)."""
         if shutil.which(self.claude_bin) is None:
             return (
@@ -286,6 +287,10 @@ class ClaudeHeadlessAgent(HalfDuplexAgent[ClaudeHeadlessAgentState]):
         ]
         if self.model:
             cmd.extend(["--model", self.model])
+        if self.effort:
+            cmd.extend(["--effort", self.effort])
+        if self.mcp_config_path:
+            cmd.extend(["--mcp-config", self.mcp_config_path])
 
         t0 = time.monotonic()
         try:
@@ -447,4 +452,6 @@ def create_claude_headless_agent(tools, domain_policy, **kwargs) -> ClaudeHeadle
         claude_bin=llm_args.get("claude_bin", "claude"),
         timeout=int(llm_args.get("timeout", 300)),
         model=model if model else None,
+        effort=llm_args.get("effort"),
+        mcp_config_path=llm_args.get("mcp_config_path"),
     )

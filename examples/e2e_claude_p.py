@@ -117,26 +117,22 @@ def main() -> int:
         session_store=store,
     )
     print(f"final answer: {orch_result.state['answer']['answer'][:200]}...")
-    print(
-        f"total calls: {orch_result.trace.calls}  "
-        f"total cost: ${orch_result.trace.cost_usd:.6f}"
-    )
+    print(f"total calls: {orch_result.trace.calls}  total cost: ${orch_result.trace.cost_usd:.6f}")
     print(f"session events on disk: {len(store.read())}")
 
     elapsed = time.perf_counter() - t0
     total_cost = root_lm.stats()["cost_usd"] + sub_lm.stats()["cost_usd"]
     total_calls = root_lm.stats()["calls"] + sub_lm.stats()["calls"]
     print("\n=== Summary ===")
-    print(f"wall_clock: {elapsed:.1f}s   total_calls: {total_calls}   total_cost: ${total_cost:.6f}")
+    print(
+        f"wall_clock: {elapsed:.1f}s   total_calls: {total_calls}   total_cost: ${total_cost:.6f}"
+    )
 
     # Smoke-test acceptance: RLM must find the fact (date 2027-03-14).
     if "2027-03-14" in rlm_pred.answer:
         print("[PASS] RLM correctly extracted the embedded date.")
         return 0
-    print(
-        f"[FAIL] RLM did not surface the date 2027-03-14. "
-        f"Got: {rlm_pred.answer[:200]}"
-    )
+    print(f"[FAIL] RLM did not surface the date 2027-03-14. Got: {rlm_pred.answer[:200]}")
     return 1
 
 

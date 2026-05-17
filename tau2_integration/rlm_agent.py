@@ -123,9 +123,7 @@ class RLMAgent(HalfDuplexAgent[RLMAgentState]):
 
     # -- state init ---------------------------------------------------------
 
-    def get_init_state(
-        self, message_history: Optional[list[Message]] = None
-    ) -> RLMAgentState:
+    def get_init_state(self, message_history: Optional[list[Message]] = None) -> RLMAgentState:
         system_prompt = self._build_base_system_prompt(self.domain_policy)
         transcript: list[dict] = []
         if message_history:
@@ -145,9 +143,7 @@ class RLMAgent(HalfDuplexAgent[RLMAgentState]):
         state.transcript.extend(self._tau2_to_entries(message))
 
         transcript_str = self._serialize_transcript(state.transcript)
-        combined_len = (
-            len(state.system_prompt) + len(self.domain_policy) + len(transcript_str)
-        )
+        combined_len = len(state.system_prompt) + len(self.domain_policy) + len(transcript_str)
 
         decomposed = False
         relevant_fragments: Optional[str] = None
@@ -184,12 +180,12 @@ class RLMAgent(HalfDuplexAgent[RLMAgentState]):
         text, tool_call = self._parse_response(root_text)
         if tool_call is not None:
             assistant_msg = AssistantMessage.text(content=None, tool_calls=[tool_call])
-            transcript_content = (
-                f"[tool_call] {tool_call.name}({json.dumps(tool_call.arguments)})"
-            )
+            transcript_content = f"[tool_call] {tool_call.name}({json.dumps(tool_call.arguments)})"
         else:
             safe_text = (
-                text if text and text.strip() else f"[rlm-agent error: {root_err or 'empty response'}]"
+                text
+                if text and text.strip()
+                else f"[rlm-agent error: {root_err or 'empty response'}]"
             )
             assistant_msg = AssistantMessage.text(content=safe_text)
             transcript_content = safe_text
@@ -393,9 +389,7 @@ class RLMAgent(HalfDuplexAgent[RLMAgentState]):
             }
         return None
 
-    def _tau2_to_entries(
-        self, msg: UserMessage | ToolMessage | MultiToolMessage
-    ) -> list[dict]:
+    def _tau2_to_entries(self, msg: UserMessage | ToolMessage | MultiToolMessage) -> list[dict]:
         if isinstance(msg, MultiToolMessage):
             out: list[dict] = []
             for tm in msg.tool_messages:
@@ -409,8 +403,7 @@ class RLMAgent(HalfDuplexAgent[RLMAgentState]):
     @staticmethod
     def _serialize_transcript(transcript: list[dict]) -> str:
         return "\n".join(
-            f"[{t.get('role', 'user').capitalize()}] {t.get('content', '')}"
-            for t in transcript
+            f"[{t.get('role', 'user').capitalize()}] {t.get('content', '')}" for t in transcript
         )
 
     @staticmethod
