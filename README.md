@@ -4,9 +4,33 @@
 
 **What that's worth.** Recursive Language Models (Zhang, Kraska, Khattab, [arXiv:2512.24601](https://arxiv.org/abs/2512.24601), Dec 2025) let an LLM programmatically slice its context in a Python REPL and dispatch cheap sub-LLM calls on chunks. On BrowseComp-Plus with 1,000 documents (6–11M tokens), flat GPT-5 scores **0%** — over-context. The same GPT-5 wrapped in the RLM pattern with GPT-5-mini as sub-LLM scores **91.33%** at **$0.99/query**. The paradigm doesn't cost more — it accesses capability flat LLMs cannot reach.
 
-**What this repo ships.** A composable Python harness (DSPy-style `Signature` / `Module`, RLM, GEPA optimizer, Pi-style 4-tool agent loop with hooks, Codex-style TOML subagents + CSV batch dispatch) plus four existing harness adapters (Claude Code / Goose / Codex / OpenCode), one shared Open Agent Skills Standard skill, and one MCP server for sub-LLM dispatch.
+**What this repo ships.** A composable Python harness with SOTA building blocks:
 
-Deep dives: **[docs/HARNESS_DESIGN.md](docs/HARNESS_DESIGN.md)** · **[docs/WHAT_IS_RLM.md](docs/WHAT_IS_RLM.md)** · **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)**
+| Layer | Module | Inspired by |
+|---|---|---|
+| Typed I/O contracts | `signatures.py`, `modules.py`, `structured.py` (Pydantic) | DSPy 2.6 + PydanticAI |
+| Long-context decomposition | `rlm.py` — `map_reduce`, `tree`, `filter_then_query` | RLM paper (arXiv:2512.24601) |
+| Reflective prompt optimization | `gepa.py` — Pareto frontier + textual feedback | GEPA (arXiv:2507.19457) |
+| Tool-using agent loop | `tools.py`, `agent_loop.py` — 4-tool core + 5 hook seams | Pi-mono |
+| Declarative subagents + batch | `subagents.py`, `batch.py` — TOML specs + CSV dispatch | OpenAI Codex |
+| Multi-step composition | `orchestrator.py` — `SessionStore` + `compress` | Hermes |
+| Multi-provider LMs | `llm.py`, `providers.py` — Anthropic + OpenAI + 100+ via LiteLLM | LiteLLM |
+| Caching + thinking + streaming | `caching.py`, `streaming.py` | Anthropic SDK 0.40+ |
+| Ensemble | `ensemble.py` — `BestOfN`, `SelfConsistency` | Wei et al. (arXiv:2203.11171) |
+| MCP-as-client | `mcp_client.py` — wrap any MCP server as `AgentTool`s | MCP spec |
+| Trace viz | `trace_viz.py` — `format_trace` + `trace_to_mermaid` | — |
+
+Plus four harness adapters (Claude Code / Goose / Codex / OpenCode), one shared Open Agent Skills Standard skill, and one MCP server for sub-LLM dispatch.
+
+Deep dives:
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — layered architecture with sequence diagrams
+- **[docs/COOKBOOK.md](docs/COOKBOOK.md)** — 12 end-to-end recipes
+- **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** — full API surface
+- **[docs/DECISIONS.md](docs/DECISIONS.md)** — 15 design-decisions log
+- **[docs/PERFORMANCE.md](docs/PERFORMANCE.md)** — measured costs + latencies + scaling
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — setup + how to extend
+- **[CHANGELOG.md](CHANGELOG.md)** — version history
+- **[docs/HARNESS_DESIGN.md](docs/HARNESS_DESIGN.md)** · **[docs/WHAT_IS_RLM.md](docs/WHAT_IS_RLM.md)** · **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)**
 
 ---
 

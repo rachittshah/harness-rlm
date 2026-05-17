@@ -1,6 +1,6 @@
 [project]
 name = "harness-rlm"
-version = "0.1.0"
+version = "0.3.0"
 description = "Use any existing coding-agent harness (Claude Code, Goose, etc.) as a Recursive Language Model substrate."
 authors = [{ name = "Rachitt Shah" }]
 readme = "README.md"
