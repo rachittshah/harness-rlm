@@ -33,6 +33,8 @@ from harness_rlm.modules import (
     Retry,
     Trace,
 )
+from harness_rlm.agent_loop import AgentLoop, AgentLoopConfig, AgentLoopResult
+from harness_rlm.batch import BatchJobResult, BatchResult, spawn_agents_on_csv
 from harness_rlm.claude_cli_lm import ClaudeCLILM
 from harness_rlm.gepa import GEPA, Candidate, GEPAResult, ScoreWithFeedback
 from harness_rlm.harness import RunResult, run
@@ -45,6 +47,24 @@ from harness_rlm.orchestrator import (
 )
 from harness_rlm.rlm import RLM, RLMConfig
 from harness_rlm.signatures import Field_, Signature, SignatureParseError
+from harness_rlm.subagents import (
+    SubagentSpec,
+    discover,
+    dispatch,
+    load_agents_md,
+    load_spec,
+)
+from harness_rlm.tools import (
+    BASH_TOOL,
+    EDIT_TOOL,
+    FINISH_TOOL,
+    PI_CORE_TOOLS,
+    READ_TOOL,
+    WRITE_TOOL,
+    AgentTool,
+    ToolResult,
+    from_function,
+)
 
 __version__ = "0.2.0"
 
@@ -94,4 +114,28 @@ __all__ = [
     "Step",
     "SessionStore",
     "compress",
+    # tools (Pi-style AgentTool)
+    "AgentTool",
+    "ToolResult",
+    "READ_TOOL",
+    "WRITE_TOOL",
+    "EDIT_TOOL",
+    "BASH_TOOL",
+    "FINISH_TOOL",
+    "PI_CORE_TOOLS",
+    "from_function",
+    # agent loop (Pi-style with hooks)
+    "AgentLoop",
+    "AgentLoopConfig",
+    "AgentLoopResult",
+    # subagents (Codex-style TOML)
+    "SubagentSpec",
+    "discover",
+    "dispatch",
+    "load_spec",
+    "load_agents_md",
+    # csv batch (Codex-style)
+    "spawn_agents_on_csv",
+    "BatchResult",
+    "BatchJobResult",
 ]
