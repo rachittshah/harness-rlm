@@ -35,6 +35,13 @@ from harness_rlm.modules import (
 )
 from harness_rlm.gepa import GEPA, Candidate, GEPAResult, ScoreWithFeedback
 from harness_rlm.harness import RunResult, run
+from harness_rlm.orchestrator import (
+    Orchestrator,
+    OrchestratorResult,
+    SessionStore,
+    Step,
+    compress,
+)
 from harness_rlm.rlm import RLM, RLMConfig
 from harness_rlm.signatures import Field_, Signature, SignatureParseError
 
@@ -79,4 +86,10 @@ __all__ = [
     # top-level harness
     "run",
     "RunResult",
+    # orchestrator
+    "Orchestrator",
+    "OrchestratorResult",
+    "Step",
+    "SessionStore",
+    "compress",
 ]
