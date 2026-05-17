@@ -74,8 +74,14 @@ def invoke_claude(
     """Call `claude -p` and return (stdout, elapsed_ms, error_or_None)."""
     if shutil.which(claude_bin) is None:
         return "", 0, f"claude binary not found: {claude_bin}"
-    cmd: list[str] = [claude_bin, "-p", "--output-format", "text",
-                      "--permission-mode", "bypassPermissions"]
+    cmd: list[str] = [
+        claude_bin,
+        "-p",
+        "--output-format",
+        "text",
+        "--permission-mode",
+        "bypassPermissions",
+    ]
     if model:
         cmd.extend(["--model", model])
     if effort:
@@ -113,7 +119,7 @@ def parse_action(response: str, available_actions: list[int]) -> tuple[int | Non
         return None, "empty response"
     text = response.strip()
     if text.startswith("```"):
-        text = "\n".join(l for l in text.splitlines() if not l.strip().startswith("```"))
+        text = "\n".join(line for line in text.splitlines() if not line.strip().startswith("```"))
     for m in JSON_OBJ_RE.finditer(text):
         try:
             obj = json.loads(m.group(0))
@@ -170,15 +176,27 @@ def play_one_game(
     fd = env.reset()
     history: list[dict[str, Any]] = []
 
-    state_name = getattr(fd.state, "name", str(fd.state))
-    levels_done = int(fd.levels_completed)
+    # Defensive: some SDK paths return frames where .state is None on the
+    # initial reset. Default to "NOT_FINISHED" and continue — we'll re-read
+    # state every turn from env.step() which always returns a fresh FrameDataRaw.
+    state_obj = getattr(fd, "state", None) if fd is not None else None
+    state_name = (
+        getattr(state_obj, "name", str(state_obj)) if state_obj is not None else "NOT_FINISHED"
+    )
+    levels_done = int(getattr(fd, "levels_completed", 0)) if fd is not None else 0
     won = False
 
     for turn in range(max_turns):
-        avail = [int(a) for a in fd.available_actions] if hasattr(fd, "available_actions") else []
+        if fd is None:
+            break
+        avail = (
+            [int(a) for a in (fd.available_actions or [])]
+            if hasattr(fd, "available_actions")
+            else []
+        )
         if not avail:
             break
-        frame_str = render_frame(fd.frame)
+        frame_str = render_frame(getattr(fd, "frame", None) or [])
         # Build prompt
         prompt_parts = [
             f"## Game: {game_id}",
@@ -190,13 +208,15 @@ def play_one_game(
             "Recent history (last 6 turns):",
         ]
         for h in history[-6:]:
-            prompt_parts.append(f"  turn {h['turn']}: action={h['action']} → state={h['state']} levels={h['levels']}")
+            prompt_parts.append(
+                f"  turn {h['turn']}: action={h['action']} → state={h['state']} levels={h['levels']}"
+            )
         prompt_parts += [
             "",
             "Current frame (grid of integers 0-9):",
             frame_str,
             "",
-            "Reply with JSON: {\"action\": N, \"reason\": \"...\"}",
+            'Reply with JSON: {"action": N, "reason": "..."}',
         ]
         prompt = "\n".join(prompt_parts)
 
@@ -222,21 +242,31 @@ def play_one_game(
             history.append({"turn": turn + 1, "action": action_int, "error": str(e)})
             break
 
-        state_name = getattr(fd.state, "name", str(fd.state))
-        levels_done = int(fd.levels_completed)
-        history.append({
-            "turn": turn + 1,
-            "action": action_int,
-            "reason": reason[:160],
-            "state": state_name,
-            "levels": levels_done,
-            "elapsed_ms": elapsed_ms,
-            "claude_err": err,
-        })
+        if fd is None:
+            history.append(
+                {"turn": turn + 1, "action": action_int, "error": "env.step returned None"}
+            )
+            break
+        state_obj = getattr(fd, "state", None)
+        state_name = (
+            getattr(state_obj, "name", str(state_obj)) if state_obj is not None else state_name
+        )
+        levels_done = int(getattr(fd, "levels_completed", levels_done) or levels_done)
+        history.append(
+            {
+                "turn": turn + 1,
+                "action": action_int,
+                "reason": reason[:160],
+                "state": state_name,
+                "levels": levels_done,
+                "elapsed_ms": elapsed_ms,
+                "claude_err": err,
+            }
+        )
 
         # Terminal states.
         if state_name in {"WIN", "GAME_OVER"}:
-            won = (state_name == "WIN")
+            won = state_name == "WIN"
             break
 
     # Score from scorecard.
@@ -270,7 +300,12 @@ def play_one_game(
 # ---------------------------------------------------------------------------
 def main() -> int:
     p = argparse.ArgumentParser(description="ARC-AGI-3 runner via claude -p")
-    p.add_argument("--num-games", type=int, default=5, help="How many environments to play (0 = all 25 public).")
+    p.add_argument(
+        "--num-games",
+        type=int,
+        default=5,
+        help="How many environments to play (0 = all 25 public).",
+    )
     p.add_argument("--max-turns", type=int, default=60, help="Per-game hard cap on turns.")
     p.add_argument("--parallel", type=int, default=3, help="Concurrent games.")
     p.add_argument("--model", default="claude-opus-4-7[1m]")
@@ -282,17 +317,23 @@ def main() -> int:
     )
     p.add_argument("--timeout", type=int, default=600)
     p.add_argument("--out", type=Path, default=Path("results/arc/arc3_run.json"))
-    p.add_argument("--game-ids", default="", help="Comma-separated explicit game IDs (overrides --num-games).")
+    p.add_argument(
+        "--game-ids", default="", help="Comma-separated explicit game IDs (overrides --num-games)."
+    )
     p.add_argument("--checkpoint-every", type=int, default=2)
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
     # Need ARC_API_KEY for the SDK (anonymous works too but results aren't attached).
     if not os.environ.get("ARC_API_KEY"):
-        print("[arc3] WARN: ARC_API_KEY not set — anonymous key will be used "
-              "(scorecards won't be attached to an account).", file=sys.stderr)
+        print(
+            "[arc3] WARN: ARC_API_KEY not set — anonymous key will be used "
+            "(scorecards won't be attached to an account).",
+            file=sys.stderr,
+        )
 
     import arc_agi
+
     arc = arc_agi.Arcade()
     envs = arc.available_environments
     print(f"[arc3] Found {len(envs)} environments")
@@ -301,7 +342,8 @@ def main() -> int:
         wanted = {g.strip() for g in args.game_ids.split(",") if g.strip()}
         # Match by title (case-insensitive prefix) or game_id (prefix).
         chosen = [
-            e for e in envs
+            e
+            for e in envs
             if e.title.lower() in {w.lower() for w in wanted}
             or any(e.game_id.lower().startswith(w.lower()) for w in wanted)
         ]
@@ -336,8 +378,11 @@ def main() -> int:
         print(json.dumps(cfg, indent=2))
         return 0
 
-    print(f"[arc3] playing {len(game_ids)} games, parallel={args.parallel}, "
-          f"max_turns={args.max_turns}, mcp={mcp_config_path}", flush=True)
+    print(
+        f"[arc3] playing {len(game_ids)} games, parallel={args.parallel}, "
+        f"max_turns={args.max_turns}, mcp={mcp_config_path}",
+        flush=True,
+    )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
@@ -382,9 +427,12 @@ def main() -> int:
                 print(f"[arc3] [{i}/{len(game_ids)}] starting {gid}", flush=True)
                 r = _run_one(gid)
                 results.append(r)
-                print(f"[arc3] [{i}/{len(game_ids)}] {gid} "
-                      f"won={r.get('won')} levels={r.get('levels_completed')} "
-                      f"turns={r.get('turns_used')} final={r.get('final_state')}", flush=True)
+                print(
+                    f"[arc3] [{i}/{len(game_ids)}] {gid} "
+                    f"won={r.get('won')} levels={r.get('levels_completed')} "
+                    f"turns={r.get('turns_used')} final={r.get('final_state')}",
+                    flush=True,
+                )
                 if i % args.checkpoint_every == 0:
                     _flush()
         else:
@@ -396,16 +444,22 @@ def main() -> int:
                     r = fut.result()
                     results.append(r)
                     done_count += 1
-                    print(f"[arc3] [{done_count}/{len(game_ids)}] {gid} "
-                          f"won={r.get('won')} levels={r.get('levels_completed')} "
-                          f"turns={r.get('turns_used')} final={r.get('final_state')}", flush=True)
+                    print(
+                        f"[arc3] [{done_count}/{len(game_ids)}] {gid} "
+                        f"won={r.get('won')} levels={r.get('levels_completed')} "
+                        f"turns={r.get('turns_used')} final={r.get('final_state')}",
+                        flush=True,
+                    )
                     if done_count % args.checkpoint_every == 0:
                         _flush()
     finally:
         _flush()
         wins = sum(1 for r in results if r.get("won"))
-        print(f"\n[arc3] PLAYED: {len(results)}  WINS: {wins}  "
-              f"WIN%: {round(wins / max(1, len(results)) * 100, 2)}", flush=True)
+        print(
+            f"\n[arc3] PLAYED: {len(results)}  WINS: {wins}  "
+            f"WIN%: {round(wins / max(1, len(results)) * 100, 2)}",
+            flush=True,
+        )
     return 0
 
 

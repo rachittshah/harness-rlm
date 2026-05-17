@@ -414,8 +414,7 @@ def main() -> int:
             print(f"[arc] parallel={args.parallel}", flush=True)
             with _cf.ThreadPoolExecutor(max_workers=args.parallel) as ex:
                 futures = {
-                    ex.submit(_process_one, i, tp): (i, tp)
-                    for i, tp in enumerate(tasks, start=1)
+                    ex.submit(_process_one, i, tp): (i, tp) for i, tp in enumerate(tasks, start=1)
                 }
                 done_count = 0
                 for fut in _cf.as_completed(futures):
