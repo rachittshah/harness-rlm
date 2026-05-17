@@ -55,7 +55,9 @@ from harness_rlm.orchestrator import (
 )
 from harness_rlm.rlm import RLM, RLMConfig
 from harness_rlm.signatures import Field_, Signature, SignatureParseError
+from harness_rlm.streaming import AsyncLM, StreamEvent, stream
 from harness_rlm.structured import TypedPrediction, TypedPredict
+from harness_rlm.trace_viz import format_trace, trace_to_mermaid
 from harness_rlm.subagents import (
     SubagentSpec,
     discover,
@@ -162,4 +164,11 @@ __all__ = [
     # SOTA: multi-provider LMs
     "OpenAILM",
     "LiteLLMLM",
+    # SOTA: streaming + async
+    "AsyncLM",
+    "StreamEvent",
+    "stream",
+    # SOTA: trace visualization
+    "format_trace",
+    "trace_to_mermaid",
 ]
