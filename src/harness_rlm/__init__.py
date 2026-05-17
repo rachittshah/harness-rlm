@@ -35,6 +35,8 @@ from harness_rlm.modules import (
 )
 from harness_rlm.agent_loop import AgentLoop, AgentLoopConfig, AgentLoopResult
 from harness_rlm.batch import BatchJobResult, BatchResult, spawn_agents_on_csv
+from harness_rlm.ensemble import BestOfN, SelfConsistency, majority_vote_on
+from harness_rlm.providers import LiteLLMLM, OpenAILM
 from harness_rlm.caching import (
     cached_system_block,
     cached_text_block,
@@ -153,4 +155,11 @@ __all__ = [
     # SOTA: Pydantic structured outputs
     "TypedPredict",
     "TypedPrediction",
+    # SOTA: ensemble modules
+    "BestOfN",
+    "SelfConsistency",
+    "majority_vote_on",
+    # SOTA: multi-provider LMs
+    "OpenAILM",
+    "LiteLLMLM",
 ]
